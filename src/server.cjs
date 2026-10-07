@@ -78,6 +78,11 @@ async function createServer(options = {}) {
             if (typeof data.reasoningEffort !== 'string' || data.reasoningEffort && !reasoningOptions(s.model).includes(data.reasoningEffort)) throw new Error('Choose a reasoning level supported by this model.');
             s.reasoningEffort = data.reasoningEffort;
           }
+          if (data.chatShare !== undefined) {
+            const n = Number(data.chatShare);
+            if (!Number.isFinite(n) || n <= 0 || n >= 1) throw new Error('Invalid pane width.');
+            s.chatShare = n;
+          }
           if (data.apiKey !== undefined) s.apiKey = String(data.apiKey).slice(0, 1000);
           if (data.vision !== undefined) s.vision = data.vision === true;
           for (const [key, min, max] of [['temperature', 0, 2], ['maxTokens', 256, 16384], ['maxSteps', 1, 40]]) if (data[key] !== undefined) {

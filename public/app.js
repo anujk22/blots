@@ -10,7 +10,7 @@ const paths = {
   expand: 'M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5', close: 'M6 6l12 12M18 6 6 18', edit: 'm4 16-1 5 5-1L20 8l-5-5L4 16ZM12 6l5 5', trash: 'M4 7h16M9 7V4h6v3M6 7l1 14h10l1-14M10 11v6M14 11v6', search: 'M15 15l6 6M17 10a7 7 0 1 1-14 0 7 7 0 0 1 14 0Z', down: 'M6 9l6 6 6-6', check: 'm5 12 4 4L19 6', download: 'M12 3v12M7 10l5 5 5-5M4 16v5h16v-5', folder: 'M3 6h7l2 3h9v11H3V6Z', terminal: 'm5 6 6 6-6 6M13 18h6', back: 'M19 12H5M11 6l-6 6 6 6', play: 'm8 4 12 8-12 8V4Z', pause: 'M7 5v14M17 5v14',
 };
 const icon = name => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${paths[name] || paths.chat}"/></svg>`;
-const avatar = (bot, size = '') => `<span class="avatar" style="--bot-color:${esc(bot?.color || '#2155ee')};${size ? `width:${size}px;height:${size}px` : ''}">${bot?.id === 'blot' ? '<img src="/mascot.png" alt="">' : `<span class="agent-initial">${esc(bot?.name?.slice(0, 1).toUpperCase() || 'B')}</span>`}</span>`;
+const avatar = (bot, size = '') => `<span class="avatar" style="--bot-color:${esc(bot?.color || '#2155ee')};${size ? `width:${size}px;height:${size}px` : ''}">${['blot', 'scout', 'quill'].includes(bot?.id) ? `<img src="/avatars/${bot.id}.png" alt="">` : `<span class="agent-initial">${esc(bot?.name?.slice(0, 1).toUpperCase() || 'B')}</span>`}</span>`;
 const date = value => new Date(value).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 const humanTool = value => ({ search_web: 'Search the web', browser_open: 'Open a page', browser_read: 'Read a page', browser_click: 'Click on a page', browser_type: 'Enter text', write_file: 'Save a file', read_file: 'Read a file', list_files: 'List files', remember: 'Save a memory', computer_exec: 'Run a command', computer_launch: 'Open an app', computer_screenshot: 'See the desktop', computer_click: 'Click the desktop', computer_move: 'Move the mouse', computer_scroll: 'Scroll the desktop', computer_type: 'Type on the desktop', computer_key: 'Press a key', delegate_task: 'Delegate to a bot', schedule_task: 'Schedule a task' }[value] || value);
 
@@ -26,6 +26,7 @@ function markdown(text) {
   return doc.body.innerHTML;
 }
 
+let paneShare, paneObserver;
 let toolsEnabled = localStorage.getItem('blots.tools') !== 'false', composerSaving = false;
 let state, selectedBot = localStorage.getItem('blots.bot') || 'blot', chatId = localStorage.getItem('blots.chat') || '', view = 'chat', selectedScreen = 1, modelList = [], connectionError = '', rfb, rfbKey = '', screenError = '', full = false, chatOpen = true, pollBusy = false, messagesSignature = '', listsSignature = '', pendingSend = false, toastTimer, filePath = '.', fileContent;
 const isLive = run => ['running', 'waiting', 'queued'].includes(run.status);
@@ -65,7 +66,7 @@ function renderLists() {
 }
 function destroyScreen() { if (rfb) { rfb.disconnect(); rfb = null; } rfbKey = ''; }
 function showView(next) {
-  destroyScreen(); view = next; full = false; messagesSignature = ''; renderLists();
+  paneObserver?.disconnect(); destroyScreen(); view = next; full = false; messagesSignature = ''; renderLists();
   if (view === 'chat') renderChat();
   if (view === 'settings') renderSettings();
   if (view === 'memory') renderMemory();
@@ -89,6 +90,7 @@ function renderChat() {
         <div class="pane-actions"><button class="icon-button" id="edit-bot" title="Edit bot" aria-label="Edit bot">${icon('settings')}</button><button class="icon-button" id="new-chat" title="New conversation" aria-label="New conversation">${icon('plus')}</button><button class="icon-button" id="delete-chat" title="Delete conversation" aria-label="Delete conversation">${icon('trash')}</button><button class="icon-button" id="close-chat" title="Show computer" aria-label="Show computer">${icon('monitor')}</button></div>
       </div><div class="messages" id="messages"></div>
     </section>
+    <div class="pane-divider" id="pane-divider" role="separator" aria-label="Resize computer pane" aria-orientation="vertical" aria-controls="computer-pane" tabindex="0" title="Drag to resize · Double-click to reset"></div>
     <section class="computer-pane" id="computer-pane">
       <div class="computer-top"><div class="computer-title">${icon('monitor')}<span>${esc(bot.name)}’s computer</span></div>
         <div class="tab-row"><select id="screen-select" aria-label="Computer screen">${[1, 2, 3, 4].map(n => `<option value="${n}" ${n === selectedScreen ? 'selected' : ''}>Desktop ${n}</option>`).join('')}</select><button id="toggle-chat" aria-label="Toggle conversation" title="Toggle conversation" aria-expanded="${chatOpen}" aria-controls="chat-pane">${icon('chat')}</button><button id="computer-tab" class="selected">Computer</button><button id="activity-tab">Activity</button><button class="icon-button" id="expand-computer" title="Expand computer" aria-label="Expand computer">${icon('expand')}</button></div>
@@ -101,6 +103,7 @@ function renderChat() {
     </section>
     <div class="composer-wrap"><form class="composer" id="composer"><textarea id="prompt" aria-label="Message your bot" placeholder="Message ${esc(bot.name)}…" rows="1"></textarea><div class="composer-bottom"><div class="composer-controls"><button type="button" class="composer-tool" id="tools-toggle" aria-label="Use tools" aria-pressed="${toolsEnabled}" title="${toolsEnabled ? 'Tools on · actions ask for approval' : 'Tools off · chat only'}">${icon('tools')}</button><label class="composer-select" title="Local model">${icon('model')}<select id="composer-model" aria-label="Model"></select>${icon('down')}</label><label class="composer-select reasoning-select">${icon('reasoning')}<select id="composer-reasoning" aria-label="Reasoning level"></select>${icon('down')}</label></div><button class="send-button" id="send" aria-label="Send message">${icon('send')}</button></div></form><div class="composer-caption">Messages and files stay on this Mac</div></div>
   </div>`;
+  setupPaneResize();
   $('#tools-toggle').onclick = () => { toolsEnabled = !toolsEnabled; localStorage.setItem('blots.tools', String(toolsEnabled)); updateComposerControls(); };
   $('#composer-model').onchange = event => action(() => saveComposerSettings({ model: event.target.value }));
   $('#composer-reasoning').onchange = event => action(() => saveComposerSettings({ reasoningEffort: event.target.value }));
@@ -118,6 +121,47 @@ function renderChat() {
   $('#activity-tab').onclick = () => { $('#activity-panel').classList.add('visible'); $('#computer-work').style.display = 'none'; $('#computer-tab').classList.remove('selected'); $('#activity-tab').classList.add('selected'); };
   $('#address-bar').onsubmit = event => { event.preventDefault(); action(async () => { toast('Opening page…'); await api('/api/computer/navigate', { botId: selectedBot, screen: selectedScreen, url: $('#address').value }); toast('Page opened'); }); };
   messagesSignature = ''; renderMessages(); updateComputer(); renderActivity();
+}
+function setupPaneResize() {
+  paneObserver?.disconnect();
+  const layout = $('.chat-layout'), divider = $('#pane-divider');
+  paneShare ??= state.settings.chatShare ?? 0.44;
+  layout.style.setProperty('--chat-share', paneShare);
+  const describe = () => {
+    if (!chatOpen || full || window.innerWidth <= 900) return;
+    const space = layout.clientWidth - 7;
+    divider.setAttribute('aria-valuemin', Math.round(340 / space * 100));
+    divider.setAttribute('aria-valuemax', Math.round((space - 340) / space * 100));
+    divider.setAttribute('aria-valuenow', Math.round($('#computer-pane').getBoundingClientRect().width / space * 100));
+  };
+  const resize = pixels => {
+    paneShare = Math.max(340, Math.min(layout.clientWidth - 347, pixels)) / layout.clientWidth;
+    layout.style.setProperty('--chat-share', paneShare); describe();
+  };
+  const save = () => action(async () => { await api('/api/settings', { chatShare: paneShare }); await refresh(); });
+  let dragging = false;
+  const finish = commit => {
+    if (!dragging) return;
+    dragging = false; document.documentElement.classList.remove('resizing-panels');
+    if (commit && layout.isConnected) save();
+  };
+  divider.onpointerdown = event => {
+    if (event.button !== 0) return;
+    event.preventDefault(); divider.focus(); divider.setPointerCapture(event.pointerId); dragging = true;
+    document.documentElement.classList.add('resizing-panels');
+  };
+  divider.onpointermove = event => { if (dragging) resize(event.clientX - layout.getBoundingClientRect().left); };
+  divider.onpointerup = () => finish(true);
+  divider.onpointercancel = () => finish(false);
+  divider.onlostpointercapture = () => finish(false);
+  divider.ondblclick = () => { paneShare = 0.44; layout.style.setProperty('--chat-share', paneShare); describe(); save(); };
+  divider.onkeydown = event => {
+    const width = $('#chat-pane').getBoundingClientRect().width;
+    const next = { ArrowLeft: width - 24, ArrowRight: width + 24, Home: layout.clientWidth - 347, End: 340 }[event.key];
+    if (next === undefined) return;
+    event.preventDefault(); resize(next); save();
+  };
+  paneObserver = new ResizeObserver(describe); paneObserver.observe(layout); paneObserver.observe($('#computer-pane')); describe();
 }
 const modelLabel = id => ({ 'incoai/Qwen3.8-27B-Splash': 'Splash 27B', 'audreyt/Qwen3.8-27B-Splash-abliterated': 'Splash 27B · Abliterated' }[id] || id.split('/').at(-1));
 const reasoningLabels = { '': 'Model default', none: 'Off', low: 'Low', medium: 'Medium', xhigh: 'High' };
@@ -172,7 +216,7 @@ function renderMessages() {
   if (signature === messagesSignature) return; messagesSignature = signature;
   const element = $('#messages'), nearBottom = element.scrollHeight - element.scrollTop - element.clientHeight < 140;
   if (!chat?.messages.length) {
-    element.innerHTML = `<div class="welcome"><h2>What are we working on?</h2><p>Ask ${esc(bot.name)} to research, write, or work on the computer.</p><div class="starters"><button data-prompt="Search the web for the latest Apple silicon AI tools. Open the most useful sources and summarize them with links.">Research a topic${icon('arrow')}</button><button data-prompt="Help me plan my day. First ask me what I need to get done.">Plan my day${icon('arrow')}</button><button data-prompt="Write a short welcome note for Blots and save it as welcome.md in the workspace.">Write a note${icon('arrow')}</button></div></div>`;
+    element.innerHTML = `<div class="welcome">${avatar(bot, 96)}<h2>What shall we<br><span class="welcome-accent">get done?</span></h2><p>Give ${esc(bot.name)} a task and watch the work next door.</p><div class="starters"><button data-prompt="Search the web for the latest Apple silicon AI tools. Open the most useful sources and summarize them with links.">Research a topic${icon('arrow')}</button><button data-prompt="Help me plan my day. First ask me what I need to get done.">Plan my day${icon('arrow')}</button><button data-prompt="Write a short welcome note for Blots and save it as welcome.md in the workspace.">Write a note${icon('arrow')}</button></div></div>`;
   } else {
     element.innerHTML = chat.messages.map(m => `<article class="message ${m.role}"><div class="message-label">${m.role === 'assistant' ? avatar(bot) + esc(bot.name) : 'You'}</div><div class="bubble">${m.role === 'user' ? esc(m.content).replaceAll('\n', '<br>') : markdown(m.content)}</div></article>`).join('');
     if (live) element.innerHTML += `<div class="live-activity"><span class="spinner"></span>${esc(run.status === 'queued' ? 'Queued · waiting for your model' : run.activity)}</div>${run.draft ? `<article class="message assistant"><div class="bubble">${markdown(run.draft)}</div></article>` : ''}`;
@@ -201,7 +245,7 @@ function updateComputer() {
     if (rfbKey !== key) {
       destroyScreen(); const host = $('#screen-host'); host.innerHTML = '<div id="vnc-screen"></div>'; host.dataset.state = 'ready';
       rfbKey = key; rfb = new RFB($('#vnc-screen'), `${location.origin.replace('http', 'ws')}/vnc?bot=${encodeURIComponent(selectedBot)}&screen=${selectedScreen}`, { shared: true });
-      rfb.scaleViewport = true; rfb.resizeSession = false; rfb.viewOnly = !isControl(); rfb.qualityLevel = 7; rfb.compressionLevel = 2; rfb.background = '#181818';
+      rfb.scaleViewport = true; rfb.resizeSession = false; rfb.viewOnly = !isControl(); rfb.qualityLevel = 7; rfb.compressionLevel = 2; rfb.background = '#172130';
       rfb.addEventListener('connect', () => { screenError = ''; updateComputer(); });
       rfb.addEventListener('disconnect', event => { if (rfbKey === key) { rfbKey = ''; screenError = event.detail.clean ? '' : 'Screen connection dropped. Reconnecting…'; } });
     }

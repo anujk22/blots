@@ -1,6 +1,6 @@
 # Blots
 
-**Your own little team.** A charcoal local AI desktop app with restrained blue accents, built for Apple silicon Macs. Each bot has its own persistent Linux computer. The agent conversation is the main reading area, with a live Linux computer beside it. Extra desktops are available in the compact screen picker. Expand the computer to watch more closely or take over its mouse and keyboard.
+**Your own little team.** A slate-blue charcoal local AI desktop app, built for Apple silicon Macs. Each bot has its own persistent Linux computer. The agent conversation is the main reading area, with a live Linux computer beside it. Extra desktops are available in the compact screen picker. Drag the divider to resize the computer pane, use arrow keys when the divider is focused, or double-click it to reset the split. Pane width is saved locally between launches. Expand the computer to watch more closely or take over its mouse and keyboard.
 
 Blots is independently built software, not a fork of Bops. There is no Blots account, inference subscription, telemetry, or hosted backend. Inference and app data stay on your Mac. Web research connects to the websites you ask your bots to visit.
 

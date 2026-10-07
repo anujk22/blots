@@ -6,7 +6,7 @@ const id = () => randomUUID();
 const now = () => new Date().toISOString();
 const initial = () => ({
   version: 1,
-  settings: { baseUrl: 'http://127.0.0.1:8000/v1', model: '', apiKey: '', temperature: 0.6, maxTokens: 4096, maxSteps: 12, vision: false, reasoningEffort: '' },
+  settings: { baseUrl: 'http://127.0.0.1:8000/v1', model: '', apiKey: '', temperature: 0.6, maxTokens: 4096, maxSteps: 12, vision: false, reasoningEffort: '', chatShare: 0.44 },
   bots: [
     { id: 'blot', name: 'Blot', role: 'Your everyday assistant', instructions: 'Help with planning, research, writing, and organizing. Be clear and practical.', color: '#2155ee' },
     { id: 'scout', name: 'Scout', role: 'Research & discovery', instructions: 'Research carefully. Use browser tools to read sources when asked. Cite URLs. Distinguish evidence from assumptions.', color: '#227f92' },

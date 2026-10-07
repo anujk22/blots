@@ -165,3 +165,15 @@ test('model changes reset reasoning while queued turns retain the choices made w
     assert.deepEqual(requests.map(r => [r.model, r.reasoning_effort]), [['incoai/Qwen3.8-27B-Splash', 'low'], ['audreyt/Qwen3.8-27B-Splash-abliterated', 'xhigh']]);
   } finally { releaseFirst(); await app.close(); await model.close(); }
 });
+
+test('pane widths accept fractions, reject invalid bounds and persist independently of inference', async () => {
+  const directory = temp(), app = await createServer({ port: 0, dataDir: directory });
+  const save = value => fetch(app.origin + '/api/settings', { method: 'POST', headers: { 'X-Blots': '1', 'Content-Type': 'application/json' }, body: JSON.stringify({ chatShare: value }) });
+  try {
+    const model = app.store.state.settings.model;
+    assert.equal((await save(.625)).status, 200);
+    assert.equal(createStore(directory).state.settings.chatShare, .625);
+    for (const value of [0, 1, -.1, 1.1, 'bad']) assert.equal((await save(value)).status, 400);
+    assert.equal(app.store.state.settings.chatShare, .625); assert.equal(app.store.state.settings.model, model);
+  } finally { await app.close(); }
+});
