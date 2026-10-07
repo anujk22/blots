@@ -21,7 +21,7 @@ const definitions = [
   schema('computer_move', 'Move the real mouse pointer across your Linux desktop. Use for hover menus. Requires approval.', { x: { type: 'integer', minimum: 0, maximum: 1279 }, y: { type: 'integer', minimum: 0, maximum: 959 } }, ['x', 'y']),
   schema('computer_scroll', 'Scroll the native app under the mouse pointer. Inspect a screenshot afterwards. Requires approval.', { direction: { type: 'string', enum: ['up', 'down'] } }, ['direction']),
   schema('computer_type', 'Type text into the currently focused native application. Requires approval.', { text: str('Text to type') }, ['text']),
-  schema('computer_key', 'Press a key in the focused native application. Requires approval.', { key: { type: 'string', enum: ['Return', 'Tab', 'Escape', 'BackSpace', 'ctrl+l', 'ctrl+a', 'ctrl+c', 'ctrl+v', 'alt+F4', 'Up', 'Down', 'Left', 'Right'] } }, ['key']),
+  schema('computer_key', 'Press a key in the focused native application. Requires approval.', { key: { type: 'string', enum: ['Return', 'Tab', 'Escape', 'BackSpace', 'ctrl+l', 'ctrl+a', 'ctrl+c', 'ctrl+v', 'ctrl+s', 'ctrl+shift+s', 'alt+F4', 'Up', 'Down', 'Left', 'Right'] } }, ['key']),
   schema('delegate_task', 'Give a task to another bot by name. Its computer work can run concurrently; model requests share a queue. Tell the user it is queued, not completed. Do not poll for it.', { bot: str('Exact bot name'), task: str('Self-contained task, including necessary context') }, ['bot', 'task']),
   schema('schedule_task', 'Create a recurring task for yourself. Runs while Blots is open. Requires approval.', { title: str('Short routine title'), task: str('Self-contained recurring task'), interval_minutes: { type: 'integer', enum: [15, 60, 360, 1440, 10080] } }, ['title', 'task', 'interval_minutes']),
 ];
@@ -45,7 +45,11 @@ function createTools(store, computers, handlers = {}) {
     });
     return { url: page.url(), ...data };
   }
-  async function execute(name, args, botId, signal) {
+  async function execute(name, args, botId, signal, model) {
+    if (model === 'incoai/Qwen3.6-35B-A3B-Splash' && ['computer_click', 'computer_move'].includes(name)) {
+      if (![args.x, args.y].every(v => Number.isInteger(v) && v >= 0 && v <= 1000)) throw new Error('Use normalized coordinates from 0 to 1000.');
+      args = { ...args, x: Math.min(1279, Math.round(args.x*1280/1000)), y: Math.min(959, Math.round(args.y*960/1000)) };
+    }
     const screen = args.screen ?? 1;
     if (!Number.isInteger(screen) || screen < 1 || screen > 4) throw new Error('Choose a screen from 1 to 4.');
     if (/browser_|search_web|computer_/.test(name)) await computers.waitForControl(botId, screen, signal);
@@ -133,7 +137,10 @@ function createTools(store, computers, handlers = {}) {
   }
   return {
     execute, definitions,
-    definitionsFor: vision => definitions.filter(t => vision || !['computer_screenshot', 'computer_click', 'computer_move', 'computer_scroll', 'computer_type', 'computer_key'].includes(t.function.name)),
+    definitionsFor: (vision, model) => definitions.filter(t => vision || !['computer_screenshot', 'computer_click', 'computer_move', 'computer_scroll', 'computer_type', 'computer_key'].includes(t.function.name)).map(t => {
+      if (model !== 'incoai/Qwen3.6-35B-A3B-Splash' || !['computer_click', 'computer_move'].includes(t.function.name)) return t;
+      return { ...t, function: { ...t.function, description: 'Use normalized screenshot coordinates from 0 to 1000 on each axis (left/top 0, right/bottom 1000). '+t.function.name.replace('computer_', '')+' the real Linux mouse. Requires approval.', parameters: { ...t.function.parameters, properties: { ...t.function.parameters.properties, x: { type: 'integer', minimum: 0, maximum: 1000 }, y: { type: 'integer', minimum: 0, maximum: 1000 } } } } };
+    }),
     needsApproval: (name, autoApproveLinux = false) => ['write_file', 'remember', 'browser_click', 'browser_type', 'computer_exec', 'computer_click', 'computer_move', 'computer_scroll', 'computer_type', 'computer_key', 'schedule_task'].includes(name) && !(autoApproveLinux && (/^(browser_|computer_)/.test(name) || name === 'write_file')),
   };
 }

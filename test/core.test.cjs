@@ -336,3 +336,107 @@ test('unchanged state polls send no body, while drafts and computer control inva
     assert.deepEqual(JSON.parse(disk).bots, app.store.state.bots); assert.equal(disk.includes('\n  '), false);
   } finally { await app.close(); }
 });
+
+test('long tasks cross the old 12-turn boundary and compact large tool context while retaining their goal', async () => {
+  let decisions = 0, summaries = 0, largest = 0; const moves = [];
+  const model = await fakeModel(request => {
+    largest = Math.max(largest, JSON.stringify(request.messages).length);
+    if (request.messages[0].content.startsWith('Save a factual task checkpoint.')) { summaries++; return { content: `Goal: long inspection. Verified ${moves.length} mouse actions completed. Continue the remaining inspection; no files or submissions were made.` }; }
+    assert.ok(request.messages.some(m => typeof m.content === 'string' && m.content.includes('long inspection')));
+    return decisions++ < 26 ? { tool_calls: [{ index: 0, id: 'move-'+decisions, type: 'function', function: { name: 'computer_move', arguments: JSON.stringify({ x: 100+decisions, y: 300 }) } }] } : { content: 'Inspection complete.' };
+  });
+  const directory = temp(), app = await createServer({ port: 0, dataDir: directory });
+  Object.assign(app.store.state.settings, { baseUrl: model.base, model: 'test-model', vision: true }); app.store.state.bots[0].autoApproveLinux = true;
+  app.computers.guest = async (_bot,_route,args) => { moves.push(args.x); return { ok: true, detail: 'Observed '.repeat(1800) }; };
+  const chat = { id: crypto.randomUUID(), botId: 'blot', title: 'test', messages: [] }; app.store.state.chats.push(chat);
+  try {
+    const run = app.agent.start(chat.id, 'Do a long inspection of this desktop.'); await wait(() => ['done','failed','paused'].includes(run.status));
+    assert.equal(run.status, 'done', run.error); assert.equal(moves.length, 26); assert.equal(run.turns, 27);
+    assert.ok(summaries >= 2); assert.ok(largest < 85000, largest); assert.equal(run.resumable, false);
+    assert.equal(fs.existsSync(path.join(directory,'tasks',run.id+'.json')), false);
+  } finally { await app.close(); await model.close(); }
+});
+
+test('a paused task continues after reopening with its tool results and never replays a completed write', async () => {
+  const model = await fakeModel(request => {
+    const written = request.messages.some(m => m.role === 'tool' && m.content.includes('Saved once.md'));
+    const moved = request.messages.some(m => m.role === 'tool' && m.content.includes('moved-once'));
+    if (written && moved) return { content: 'Continued and completed.' };
+    return { tool_calls: [{ index: 0, id: written ? 'move' : 'write', type: 'function', function: written ? { name: 'computer_move', arguments: '{"x":700,"y":400}' } : { name: 'write_file', arguments: '{"path":"once.md","content":"Do not rewrite this."}' } }] };
+  });
+  const directory=temp(); let app=await createServer({port:0,dataDir:directory});
+  Object.assign(app.store.state.settings,{baseUrl:model.base,model:'test-model',maxSteps:2,vision:true});app.store.state.bots[0].autoApproveLinux=true;
+  let movements=0;app.computers.guest=async()=>{movements++;return 'moved-once';};
+  const chat={id:crypto.randomUUID(),botId:'blot',title:'test',messages:[]};app.store.state.chats.push(chat);
+  try {
+    const run=app.agent.start(chat.id,'Write once.md and move the mouse.');await wait(()=>run.status==='paused');
+    assert.match(run.error,/2-turn budget/);assert.equal(movements,1);
+    const file=path.join(app.store.workspace,'once.md');const modified=fs.statSync(file).mtimeMs;
+    const checkpoint=fs.readFileSync(path.join(directory,'tasks',run.id+'.json'),'utf8');assert.ok(checkpoint.includes('Saved once.md'));assert.equal(checkpoint.includes('data:image'),false);
+    await app.close();app=await createServer({port:0,dataDir:directory});
+    app.computers.guest=async(_bot,route)=>{assert.match(route,/screenshot/);return Buffer.from('current-desktop');};
+    const response=await fetch(app.origin+'/api/resume',{method:'POST',headers:{'X-Blots':'1','Content-Type':'application/json'},body:JSON.stringify({runId:run.id})});assert.equal(response.status,200);
+    await wait(()=>app.store.state.runs[0].status==='done');assert.equal(fs.statSync(file).mtimeMs,modified);
+    assert.equal(app.store.state.runs[0].resumes,1);assert.equal(app.store.state.chats[0].messages.at(-1).content,'Continued and completed.');
+  } finally {await app.close();await model.close();}
+});
+
+test('identical action-and-result loops pause with a resumable checkpoint', async () => {
+  const model=await fakeModel(()=>({tool_calls:[{index:0,id:'loop',type:'function',function:{name:'computer_move',arguments:'{"x":400,"y":300}'}}]}));
+  const app=await createServer({port:0,dataDir:temp()});Object.assign(app.store.state.settings,{baseUrl:model.base,model:'test-model',vision:true});app.store.state.bots[0].autoApproveLinux=true;
+  let calls=0;app.computers.guest=async()=>{calls++;return {ok:true};};const chat={id:crypto.randomUUID(),botId:'blot',title:'test',messages:[]};app.store.state.chats.push(chat);
+  try {const run=app.agent.start(chat.id,'Inspect the desktop.');await wait(()=>run.status==='paused');assert.equal(calls,4);assert.match(run.error,/identical/);assert.equal(run.resumable,true);}
+  finally {await app.close();await model.close();}
+});
+
+test('legacy default budgets migrate, custom budgets remain, and longer session budgets are validated', async () => {
+  const directory=temp(),old=createStore(directory);delete old.state.settings.maxMinutes;old.state.settings.maxSteps=12;old.save();
+  const migrated=createStore(directory);assert.equal(migrated.state.settings.maxSteps,120);assert.equal(migrated.state.settings.maxMinutes,120);
+  delete migrated.state.settings.maxMinutes;migrated.state.settings.maxSteps=25;migrated.save();assert.equal(createStore(directory).state.settings.maxSteps,25);
+  const app=await createServer({port:0,dataDir:directory});
+  const save=body=>fetch(app.origin+'/api/settings',{method:'POST',headers:{'X-Blots':'1','Content-Type':'application/json'},body:JSON.stringify(body)});
+  try {assert.equal((await save({maxSteps:500,maxMinutes:240})).status,200);for(const body of [{maxSteps:1001},{maxSteps:0},{maxMinutes:481},{maxMinutes:1.5}])assert.equal((await save(body)).status,400);}
+  finally {await app.close();}
+});
+
+test('35B visual grounding converts normalized coordinates without changing 27B pixel tools', async () => {
+  const { createTools }=require('../src/tools.cjs');const inputs=[];
+  const tools=createTools(createStore(temp()),{waitForControl:async()=>{},guest:async(...args)=>{inputs.push(args);return {ok:true};}});
+  const model='incoai/Qwen3.6-35B-A3B-Splash';
+  const normalized=tools.definitionsFor(true,model).find(t=>t.function.name==='computer_click');
+  assert.equal(normalized.function.parameters.properties.x.maximum,1000);
+  assert.equal(tools.definitionsFor(true,'audreyt/Qwen3.8-27B-Splash-abliterated').find(t=>t.function.name==='computer_click').function.parameters.properties.x.maximum,1279);
+  await tools.execute('computer_click',{x:503,y:945},'blot',undefined,model);
+  await tools.execute('computer_move',{x:1000,y:1000},'blot',undefined,model);
+  await tools.execute('computer_click',{x:447,y:578},'blot',undefined,'audreyt/Qwen3.8-27B-Splash-abliterated');
+  assert.deepEqual(inputs.map(a=>[a[2].x,a[2].y]),[[644,907],[1279,959],[447,578]]);
+  await assert.rejects(tools.execute('computer_click',{x:1001,y:0},'blot',undefined,model),/normalized/);
+  const {reasoningOptions}=require('../src/inference.cjs');assert.deepEqual(reasoningOptions(model),['none']);
+});
+
+test('denied actions remain denied after checkpoint resume even when argument key order changes', async () => {
+  let decisions=0;const model=await fakeModel(()=>decisions++<2?{tool_calls:[{index:0,id:'deny-'+decisions,type:'function',function:{name:'write_file',arguments:decisions===1?'\{"path":"denied.md","content":"no"\}':'\{"content":"no","path":"denied.md"\}'}}]}:{content:'Respected your decision.'});
+  const directory=temp();let app=await createServer({port:0,dataDir:directory});Object.assign(app.store.state.settings,{baseUrl:model.base,model:'test-model',maxSteps:1});
+  const chat={id:crypto.randomUUID(),botId:'blot',title:'test',messages:[]};app.store.state.chats.push(chat);
+  try {const run=app.agent.start(chat.id,'Write denied.md.');await wait(()=>run.approval);app.agent.approve(run.approval.id,false);await wait(()=>run.status==='paused');
+    await app.close();app=await createServer({port:0,dataDir:directory});app.agent.resume(run.id);await wait(()=>app.store.state.runs[0].status==='paused');
+    assert.equal(app.store.state.runs[0].approval,undefined);assert.equal(fs.existsSync(path.join(app.store.workspace,'denied.md')),false);assert.equal(app.store.state.runs[0].steps.at(-1).status,'denied');
+  } finally {await app.close();await model.close();}
+});
+
+test('checkpoint loading reconciles interrupted calls as observations without replaying them', () => {
+  const {createTaskState}=require('../src/task.cjs');const store=createStore(temp()),tasks=createTaskState(store);
+  const run={id:crypto.randomUUID(),goal:'Save a note',turns:1,steps:[{callId:'write',status:'done',result:'Saved note.md'}]};
+  const calls=['write','uncertain'].map(id=>({id,type:'function',function:{name:'write_file',arguments:'{}'}}));
+  tasks.save(run,[{role:'system',content:'system'},{role:'assistant',content:'',tool_calls:calls},{role:'user',content:[{type:'image_url',image_url:{url:'data:image/png;base64,abc'}}]}],'',new Set());
+  const loaded=tasks.load(run,{messages:[]});assert.equal(loaded.messages.length,3);assert.equal(loaded.messages[1].content,'Saved note.md');assert.match(loaded.messages[2].content,/do not blindly repeat/);
+  const file=path.join(store.dataDir,'tasks',run.id+'.json');assert.equal(fs.statSync(file).mode&0o777,0o600);assert.equal(fs.readFileSync(file,'utf8').includes('data:image'),false);tasks.remove(run);assert.equal(fs.existsSync(file),false);
+});
+
+test('elapsed session budget pauses with a checkpoint and prevents a late tool action', async () => {
+  const model=await fakeModel(async()=>{await new Promise(r=>setTimeout(r,100));return {tool_calls:[{index:0,id:'late',type:'function',function:{name:'write_file',arguments:'{"path":"late.md","content":"never"}'}}]};});
+  const app=await createServer({port:0,dataDir:temp()});Object.assign(app.store.state.settings,{baseUrl:model.base,model:'test-model',maxMinutes:.001});app.store.state.bots[0].autoApproveLinux=true;
+  const chat={id:crypto.randomUUID(),botId:'blot',title:'test',messages:[]};app.store.state.chats.push(chat);
+  try {const run=app.agent.start(chat.id,'Save a note.');await wait(()=>run.status==='paused');assert.match(run.error,/Paused after/);assert.equal(run.resumable,true);assert.equal(fs.existsSync(path.join(app.store.workspace,'late.md')),false);}
+  finally {await app.close();await model.close();}
+});

@@ -1,0 +1,32 @@
+# Longer local tasks
+
+The former 12-step error was an app limit: the task stopped after twelve model decisions, even if it only needed one more turn to report what it had done. It did not indicate a model crash. The old retry started the request again without the original tool transcript.
+
+## Current behavior
+
+- Defaults: 120 decision turns or 120 minutes per session. Settings allows 1–1,000 turns and 1–480 minutes. A decision can request multiple tools; checkpoint summaries do not consume this turn budget.
+- Reaching a budget pauses the task and shows **Continue task**. Continuation keeps the same task ID, original goal, confirmed tool results, and denied actions. Restarting the app also preserves the checkpoint; continuation is explicit, never automatic.
+- Context is summarized every 12 decision turns or when text exceeds 48,000 characters. The next prompt keeps the goal, factual summary, and two recent tool rounds. Only the latest screenshots stay in memory. Saved task files contain text and exclude screenshots.
+- Checkpoints are saved before an action batch and after each recorded result. A tool call interrupted without confirmation is described as uncertain: the agent must inspect the current state before proceeding. This cannot guarantee exactly-once effects if the app closes between an action happening and its result being recorded.
+- Four consecutive identical action-and-result rounds pause the task. This catches a simple repeated-action loop, not every kind of stalled or incorrect plan.
+- The agent instructions ask for a concrete finish point even for open-ended requests, verified progress, and inspection after resuming. Model-generated summaries can omit details; they are not perfect memory.
+- Each bot's work remains ordered, different bots can perform computer actions concurrently, and inference is serialized. Continuing does not add another model process.
+- Checkpoints are removed when tasks finish, their conversations are deleted, or their activity falls outside the retained recent runs. Tool activity retains at most 120 entries per run, with active runs kept even while newer tasks are created.
+
+## Installed 35B A3B Splash
+
+The installed package is [`incoai/Qwen3.6-35B-A3B-Splash`](https://huggingface.co/incoai/Qwen3.6-35B-A3B-Splash). Its model card describes 35B total parameters with about 3B active per token, a vision encoder, and thinking on by default. Reasoning is a switch: **Model default** enables it, **Off** sends `reasoning_effort: none`. Low/Medium/High are not offered for this package.
+
+The existing local gateway now lists this installed model alongside both 27B packages. It keeps its existing one-resident-model policy and five-minute idle offload. Selecting a different model may require a loading delay. Blots' selected 27B abliterated model was retained during installation.
+
+The Qwen grounding convention uses normalized 0–1000 coordinates ([Qwen maintainer explanation](https://github.com/QwenLM/Qwen3.8/discussions/56)). In the initial 35B run, several dock clicks were consistent with this scale but missed when interpreted as raw pixels. Its visual mouse tools now explicitly request normalized coordinates and convert them to the 1280 × 960 desktop. Other models retain the existing pixel convention, and numbered browser actions still use their DOM-derived pixel locations. The GUI key tools now include Ctrl+S and Ctrl+Shift+S, and instructions recommend the app launcher helper when a launcher is hidden instead of guessing or backgrounding a GUI shell command.
+
+## Verification on the M5 Pro Mac, October 7, 2026
+
+- Automated: 26 tests passed. Added coverage crosses the former 12-turn boundary, checks bounded context after compaction, restores a checkpoint across server restart without rewriting a completed file, preserves denied actions despite reordered argument keys, reconciles uncertain interrupted calls, validates budget migration/settings, checks normalized 35B versus unchanged 27B coordinates, pauses an identical-action loop, and prevents a late action after a shortened test timeout.
+- Actual 35B local-model research run: completed at 50 total decision turns after a budget pause and continuation. It read a Wikipedia source, saved a note, and read the file back. It struggled with GUI saving and used the direct file tool as a fallback; this was not a successful pure-GUI research-and-save test.
+- After coordinate/save-key changes: a separate 35B task paused after four turns, survived a server and Linux computer restart, then continued from the UI and completed at 13 total decision turns. It launched Mousepad, typed a note, used Ctrl+S, clicked the save dialog, and verified `/workspace/gui-checkpoint.txt` by reading its exact content. No shell or direct write tool was used.
+- Browser UI: Continue task replaced retry for the paused task, new budget controls saved, the continued task showed Stop task, and no page JavaScript errors occurred.
+- Native ARM64 app rebuilt, installed, reopened, and checked for the migrated 120/120 budgets and selectable 35B package. The 35B package also returned a successful completion through the main local gateway.
+
+These tests prove longer multi-step execution and restart continuation. They are not a two-hour or eight-hour endurance test, a representative model benchmark, or a claim of parity with OpenAI agents. The 35B package is a reasonable fast worker for bounded tasks; reliable unattended work in complex unfamiliar GUI applications remains unproven. Use a precise goal, an explicit output file, and a checkable finish condition.

@@ -138,7 +138,7 @@ class Handler(BaseHTTPRequestHandler):
                     cmd = ['xdotool', 'type', '--clearmodifiers', '--delay', '1', '--', text]
                 elif kind == 'key':
                     key = data.get('key')
-                    if key not in ['Return', 'Tab', 'Escape', 'BackSpace', 'ctrl+l', 'ctrl+a', 'ctrl+c', 'ctrl+v', 'alt+F4', 'Up', 'Down', 'Left', 'Right']:
+                    if key not in ['Return', 'Tab', 'Escape', 'BackSpace', 'ctrl+l', 'ctrl+a', 'ctrl+c', 'ctrl+v', 'ctrl+s', 'ctrl+shift+s', 'alt+F4', 'Up', 'Down', 'Left', 'Right']:
                         raise ValueError('Unsupported key')
                     cmd = ['xdotool', 'key', '--clearmodifiers', key]
                 elif kind == 'scroll':

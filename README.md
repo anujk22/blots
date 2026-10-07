@@ -11,7 +11,7 @@ Blots is independently built software, not a fork of Bops. There is no Blots acc
 1. Open Docker Desktop and wait for it to finish starting. No Docker account is required to run local containers.
 2. Run an OpenAI-compatible **local model server** with a tool-capable model loaded. Blots defaults to `http://127.0.0.1:8000/v1`. The app selects the first available model on first launch; change it in Settings. Ollama commonly uses `http://127.0.0.1:11434/v1`; LM Studio commonly uses `http://127.0.0.1:1234/v1`.
 3. Open **Blots.app**. Click **Start computer** beside your bot. On a fresh machine, first choose **Settings → Build computer image**. This downloads and builds the Linux desktop once; subsequent starts use the local image.
-4. Use the composer’s shield icon to choose **Ask** or **Auto** approval. Auto saves standing approval for the selected bot’s Linux commands, browser, mouse, keyboard, and shared workspace file writes. It defaults to Ask. Switching to Auto also approves a waiting Linux action; switching back to Ask restores prompts for subsequent actions. Mac system access is not added. The cube icon selects a local model, and the lightbulb selects reasoning. The reasoning menu offers Model default, Off, Low, Medium, and High for the two verified Qwen3.8 Splash packages; High sends their `xhigh` setting. Unverified models use their own default with the picker disabled. Switching models resets reasoning, and each task keeps the choices made when it was sent.
+4. Use the composer’s shield icon to choose **Ask** or **Auto** approval. Auto saves standing approval for the selected bot’s Linux commands, browser, mouse, keyboard, and shared workspace file writes. It defaults to Ask. Switching to Auto also approves a waiting Linux action; switching back to Ask restores prompts for subsequent actions. Mac system access is not added. The cube icon selects a local model, and the lightbulb selects reasoning. The reasoning menu offers Model default, Off, Low, Medium, and High for the two verified Qwen3.8 Splash packages; High sends their `xhigh` setting. Splash 35B A3B offers Model default (thinking on) and Off; its reasoning is a switch rather than graded levels. Unverified models use their own default with the picker disabled. Switching models resets reasoning, and each task keeps the choices made when it was sent.
 5. Ask a bot to research a topic, draft a document, or organize files. Review requested writes and browser interactions. Click **Take over** to drive its real desktop; **Hand back** or Escape returns control.
 
 The supplied Mac app bundles its own Electron/Node runtime. You do not need Node to launch it. Docker Desktop and the local inference server are separate prerequisites; model weights are not included.
@@ -60,7 +60,7 @@ The desktop is built locally and unsigned for distribution; it is not a notarize
 - Local workspace listing, reading, file creation/editing, and downloads. Saved memories and new scheduled tasks come to you for review. Workspace file writes, browser actions, and Linux actions also ask unless Auto is enabled for that bot.
 - Durable local memory shared among bots, managed by you.
 - Scheduled routines, created in the app or requested in chat, while the app is open. Results appear in their own conversations; reviewed actions still wait for you.
-- Tool activity, cancellation, error recovery, data export, and local server/model settings.
+- Tool activity, cancellation, saved task continuation, data export, and local server/model settings. Long tasks default to 120 model turns or 120 minutes per session, with configurable budgets. Continue task restores saved progress after a pause or app restart.
 - Visible real mouse motion, clicking, hovering, scrolling, typing and key presses in Linux. Browser clicks and text entry use the actual desktop pointer too. The pointer is embedded in the live video so viewers can watch the work.
 - Computer tasks prefer visible Linux GUI actions. Searches and page opens use the real address bar, mouse and keyboard; browser text reading supplements the visible work. Ordinary questions can still receive direct answers. The native cursor has an agent-colored glow and portrait badge, with eased motion timed at 60 updates per second.
 - Three compact composer menus choose action approval, the local model, and the model's supported reasoning level. Hover labels show the current choices. Computer tools remain available; the agent decides when a question needs computer work.
@@ -70,7 +70,7 @@ The desktop is built locally and unsigned for distribution; it is not a notarize
 
 The Mac app and Linux image run natively on ARM64. Models run in your existing local server, not in Docker. Blots serializes model requests while different bots run computer actions concurrently. Turns for the same bot remain ordered so they cannot fight over its pointer. Only the first screen starts with a computer; the other three start when viewed or used. Each desktop is limited to 2 CPUs and 2 GB RAM; at most three run at once. With one active screen each, three idle computers measured about 1.0 GiB combined on the development M5 Pro Mac, down from 3.5 GiB when every screen started eagerly. Opening additional screens or heavy applications increases usage. The model server and Docker VM have separate overhead. Computers start on demand and stop together when Blots quits; their data persists. Hidden viewers disconnect without stopping agent work. Browser HTTP caches are limited to 64 MiB per used screen; container logs rotate at 10 MiB. Only the latest screenshot batch is sent in later vision turns. Unchanged state polls return no body, and saved state uses compact JSON. The full Linux application image is shared by all bots; it is not copied for each computer.
 
-Conversation context is bounded to the most recent 24 messages and 60,000 characters. Tool results are bounded, reply length is configurable, and tasks have a configurable step limit. This avoids uncontrolled context growth; it also means very long conversations do not all fit in a single prompt. Shared memory preserves the facts you choose to save.
+Conversation context is bounded to the most recent 24 messages and 60,000 characters. Tool results are bounded and reply length is configurable. During tasks, context is summarized every 12 decision turns or when text exceeds 48,000 characters, keeping the original goal, factual progress, and two recent tool rounds. Only current screenshots are kept in memory; checkpoint files contain text, not image histories. This avoids uncontrolled context growth; it also means very long conversations do not all fit in a single prompt. Shared memory preserves the facts you choose to save.
 
 ## Your data and boundaries
 
@@ -80,6 +80,7 @@ The packaged Mac app stores data in:
 ~/Library/Application Support/Blots/
 ├── state.json             conversations, settings, memory, routines, activity
 ├── workspace/             shared files visible to you and your bots
+├── tasks/<run-id>.json    text checkpoints for paused or interrupted tasks
 └── computers/<bot-id>/    each computer's persistent Linux home and profiles
 ```
 
@@ -87,7 +88,7 @@ No Mac home directory, model API key, Docker socket, or system folder is mounted
 
 The app server, desktop ports, and model connection are loopback-only. The app checks request origins and hosts; the renderer is sandboxed with Node disabled. Markdown is sanitized. API keys, when a local server needs one, stay in local settings and are excluded from exported backups. This is a single-user local app, not a multi-user remote service.
 
-Quitting stops pending work. Reopening records interrupted tasks instead of repeating them automatically. Stopping prevents further model/tool steps; an already executing Linux command may finish or reach its 30-second limit. A task can run for up to 30 minutes before it is stopped. Restart with a follow-up message to continue from completed work.
+Quitting stops pending work. Reopening records interrupted tasks instead of repeating them automatically. Stopping prevents further model/tool steps; an already executing Linux command may finish or reach its 30-second limit. The default session pauses after 120 decision turns or two hours; Settings supports up to 1,000 turns and eight hours. Continue task retains the original goal and recorded results, obtains a fresh desktop screenshot when visual tools are enabled, and preserves denied actions. Four consecutive identical action-and-result rounds pause the task to avoid a simple loop. This does not detect every possible loop. Completed checkpoint files are removed and activity is bounded. See [long-task verification and model limits](docs/long-tasks.md).
 
 ## Practical limits
 

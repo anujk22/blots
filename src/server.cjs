@@ -90,7 +90,7 @@ async function createServer(options = {}) {
           }
           if (data.apiKey !== undefined) s.apiKey = String(data.apiKey).slice(0, 1000);
           if (data.vision !== undefined) s.vision = data.vision === true;
-          for (const [key, min, max] of [['temperature', 0, 2], ['maxTokens', 256, 16384], ['maxSteps', 1, 40]]) if (data[key] !== undefined) {
+          for (const [key, min, max] of [['temperature', 0, 2], ['maxTokens', 256, 16384], ['maxSteps', 1, 1000], ['maxMinutes', 1, 480]]) if (data[key] !== undefined) {
             const n = Number(data[key]); if (!Number.isFinite(n) || n < min || n > max || (key !== 'temperature' && !Number.isInteger(n))) throw new Error(`Invalid ${key}.`); s[key] = n;
           }
           store.state.settings = s; store.save(); return json(res, { ok: true });
@@ -99,9 +99,11 @@ async function createServer(options = {}) {
         if (route === '/api/chats/delete' && method === 'POST') {
           const data = await body(req);
           if ([...agent.active.values()].some(j => j.chatId === data.id)) throw new Error('Stop this conversation before deleting it.');
+          for (const run of store.state.runs.filter(r => r.chatId === data.id)) agent.forget(run);
           store.state.chats = store.state.chats.filter(c => c.id !== data.id); store.state.runs = store.state.runs.filter(r => r.chatId !== data.id); store.save(); return json(res, { ok: true });
         }
         if (route === '/api/message' && method === 'POST') { const data = await body(req); return json(res, agent.start(data.chatId, text(data.text, 'Message'), data.tools !== false)); }
+        if (route === '/api/resume' && method === 'POST') { const data = await body(req); return json(res, agent.resume(data.runId)); }
         if (route === '/api/stop' && method === 'POST') { const data = await body(req); return json(res, { stopped: agent.stop(data.runId) }); }
         if (route === '/api/stop-all' && method === 'POST') { for (const runId of agent.active.keys()) agent.stop(runId); return json(res, { ok: true }); }
         if (route === '/api/approve' && method === 'POST') { const data = await body(req); agent.approve(data.id, data.allow === true); return json(res, { ok: true }); }

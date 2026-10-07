@@ -6,7 +6,7 @@ const id = () => randomUUID();
 const now = () => new Date().toISOString();
 const initial = () => ({
   version: 1,
-  settings: { baseUrl: 'http://127.0.0.1:8000/v1', model: '', apiKey: '', temperature: 0.6, maxTokens: 4096, maxSteps: 12, vision: false, reasoningEffort: '', chatShare: 0.44 },
+  settings: { baseUrl: 'http://127.0.0.1:8000/v1', model: '', apiKey: '', temperature: 0.6, maxTokens: 4096, maxSteps: 120, maxMinutes: 120, vision: false, reasoningEffort: '', chatShare: 0.44 },
   bots: [
     { id: 'blot', name: 'Blot', role: 'Your everyday assistant', instructions: 'Help with planning, research, writing, and organizing. Be clear and practical.', color: '#2155ee' },
     { id: 'scout', name: 'Scout', role: 'Research & discovery', instructions: 'Research carefully. Use browser tools to read sources when asked. Cite URLs. Distinguish evidence from assumptions.', color: '#227f92' },
@@ -25,6 +25,10 @@ function createStore(dataDir) {
     state = JSON.parse(fs.readFileSync(file, 'utf8'));
     if (state.version !== 1 || !Array.isArray(state.bots)) throw new Error('Blots cannot read this data version. Your data has been left intact.');
   } else state = initial();
+  if (state.settings.maxMinutes === undefined) {
+    state.settings.maxMinutes = 120;
+    if (state.settings.maxSteps === 12) state.settings.maxSteps = 120;
+  }
   const save = () => {
     fs.writeFileSync(file + '.tmp', JSON.stringify(state), { mode: 0o600 });
     fs.renameSync(file + '.tmp', file);
@@ -32,6 +36,7 @@ function createStore(dataDir) {
   // Interrupted work is recorded, never silently resumed after a restart.
   for (const run of state.runs) if (['running', 'waiting', 'queued'].includes(run.status)) {
     run.status = 'stopped'; run.endedAt = now(); run.error = 'Blots closed before this task finished.';
+    delete run.approval;
   }
   save();
   return { state, save, workspace, dataDir };

@@ -6,8 +6,9 @@ function localBase(value) {
   return url.toString().replace(/\/+$/, '');
 }
 
-// These two Splash packages share the verified Qwen3.8 thinking template.
+// Expose only reasoning controls verified in each Splash package.
 function reasoningOptions(model) {
+  if (model === 'incoai/Qwen3.6-35B-A3B-Splash') return ['none'];
   return ['incoai/Qwen3.8-27B-Splash', 'audreyt/Qwen3.8-27B-Splash-abliterated'].includes(model) ? ['none', 'low', 'medium', 'xhigh'] : [];
 }
 
