@@ -18,6 +18,8 @@ const definitions = [
   schema('computer_launch', 'Launch a real app on your Linux desktop.', { app: { type: 'string', enum: ['browser', 'files', 'terminal', 'editor'] } }, ['app']),
   schema('computer_screenshot', 'See your real Linux screen as an image. Use to inspect native apps before acting.'),
   schema('computer_click', 'Click pixel coordinates on the 1280 by 800 desktop shown in your latest screenshot. Requires approval.', { x: { type: 'integer', minimum: 0, maximum: 1279 }, y: { type: 'integer', minimum: 0, maximum: 799 } }, ['x', 'y']),
+  schema('computer_move', 'Move the real mouse pointer across your Linux desktop. Use for hover menus. Requires approval.', { x: { type: 'integer', minimum: 0, maximum: 1279 }, y: { type: 'integer', minimum: 0, maximum: 799 } }, ['x', 'y']),
+  schema('computer_scroll', 'Scroll the native app under the mouse pointer. Inspect a screenshot afterwards. Requires approval.', { direction: { type: 'string', enum: ['up', 'down'] } }, ['direction']),
   schema('computer_type', 'Type text into the currently focused native application. Requires approval.', { text: str('Text to type') }, ['text']),
   schema('computer_key', 'Press a key in the focused native application. Requires approval.', { key: { type: 'string', enum: ['Return', 'Tab', 'Escape', 'BackSpace', 'ctrl+l', 'ctrl+a', 'ctrl+c', 'ctrl+v', 'alt+F4', 'Up', 'Down', 'Left', 'Right'] } }, ['key']),
   schema('delegate_task', 'Give a task to another bot by name. Its task is queued and runs after your current turn finishes. Tell the user it is queued, not completed. Do not poll for it.', { bot: str('Exact bot name'), task: str('Self-contained task, including necessary context') }, ['bot', 'task']),
@@ -36,7 +38,10 @@ function createTools(store, computers, handlers = {}) {
         el.setAttribute('data-blots-element', String(index));
         return { element: index, tag: el.tagName.toLowerCase(), label: (el.getAttribute('aria-label') || el.innerText || el.getAttribute('placeholder') || el.getAttribute('name') || '').trim().slice(0, 160), type: el.getAttribute('type'), href: el.getAttribute('href') };
       });
-      return { title: document.title, text: document.body.innerText.slice(0, 16000), elements };
+      let anchor;
+      try { anchor = location.hash ? document.getElementById(decodeURIComponent(location.hash.slice(1))) : null; } catch {}
+      const section = anchor?.closest('dl,section,article') || anchor?.parentElement || document.body;
+      return { title: document.title, text: section.innerText.slice(0, 16000), elements };
     });
     return { url: page.url(), ...data };
   }
@@ -69,19 +74,37 @@ function createTools(store, computers, handlers = {}) {
         const url = new URL(name === 'search_web' ? `https://www.google.com/search?q=${encodeURIComponent(args.query)}` : args.url);
         if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error('Only ordinary HTTP and HTTPS pages can be opened.');
         const page = await computers.page(botId, screen, signal);
+        await page.bringToFront();
         await page.goto(url.href, { waitUntil: 'domcontentloaded', timeout: 30000 });
         return readPage(page);
       }
-      case 'browser_read': return readPage(await computers.page(botId, screen, signal));
+      case 'browser_read': {
+        const page = await computers.page(botId, screen, signal);
+        await page.bringToFront();
+        return readPage(page);
+      }
       case 'browser_click': case 'browser_type': {
         if (!Number.isInteger(args.element) || args.element < 0 || args.element > 119) throw new Error('Use an element number from the current page.');
         const page = await computers.page(botId, screen, signal);
         const element = page.locator(`[data-blots-element="${args.element}"]`);
-        if (name === 'browser_click') await element.click();
-        else {
-          if (typeof args.text !== 'string' || args.text.length > 20000) throw new Error('Enter text under 20,000 characters.');
-          await element.fill(args.text);
+        if (name === 'browser_type' && (typeof args.text !== 'string' || args.text.length > 20000)) throw new Error('Enter text under 20,000 characters.');
+        if (name === 'browser_type') {
+          const textInput = await element.evaluate(el => el.tagName === 'TEXTAREA' || el.tagName === 'INPUT' && ['text', 'search', 'url', 'email', 'tel', 'password', 'number'].includes(el.type));
+          if (!textInput || !(await element.isEditable())) throw new Error('Choose an editable text input from the current page.');
         }
+        await page.bringToFront();
+        // Trial checks visibility, stability and overlays before using the real X pointer.
+        await element.click({ trial: true, timeout: 10000 });
+        const point = await element.evaluate(el => {
+          const r = el.getBoundingClientRect(), border = (outerWidth - innerWidth*devicePixelRatio) / 2;
+          return { x: Math.round(screenX + border + (r.x + r.width/2)*devicePixelRatio), y: Math.round(screenY + outerHeight - innerHeight*devicePixelRatio - border + (r.y + r.height/2)*devicePixelRatio) };
+        });
+        await computers.guest(botId, '/input', { kind: 'click', ...point, screen }, signal);
+        if (name === 'browser_type') {
+          await computers.guest(botId, '/input', { kind: 'key', key: 'ctrl+a', screen }, signal);
+          await computers.guest(botId, '/input', { kind: 'type', text: args.text, screen }, signal);
+        }
+        await page.waitForTimeout(250);
         await page.waitForLoadState('domcontentloaded').catch(() => {});
         return readPage(page);
       }
@@ -89,6 +112,8 @@ function createTools(store, computers, handlers = {}) {
       case 'computer_launch': return computers.guest(botId, '/launch', { app: args.app, screen }, signal);
       case 'computer_screenshot': return { image: `data:image/png;base64,${(await computers.guest(botId, `/screenshot?screen=${screen}`)).toString('base64')}` };
       case 'computer_click': return computers.guest(botId, '/input', { kind: 'click', x: args.x, y: args.y, screen }, signal);
+      case 'computer_move': return computers.guest(botId, '/input', { kind: 'move', x: args.x, y: args.y, screen }, signal);
+      case 'computer_scroll': return computers.guest(botId, '/input', { kind: 'scroll', direction: args.direction, screen }, signal);
       case 'computer_type': return computers.guest(botId, '/input', { kind: 'type', text: args.text, screen }, signal);
       case 'computer_key': return computers.guest(botId, '/input', { kind: 'key', key: args.key, screen }, signal);
       case 'delegate_task': return handlers.delegate(args, botId);
@@ -98,8 +123,8 @@ function createTools(store, computers, handlers = {}) {
   }
   return {
     execute, definitions,
-    definitionsFor: vision => definitions.filter(t => vision || !['computer_screenshot', 'computer_click', 'computer_type', 'computer_key'].includes(t.function.name)),
-    needsApproval: name => ['write_file', 'remember', 'browser_click', 'browser_type', 'computer_exec', 'computer_click', 'computer_type', 'computer_key', 'schedule_task'].includes(name),
+    definitionsFor: vision => definitions.filter(t => vision || !['computer_screenshot', 'computer_click', 'computer_move', 'computer_scroll', 'computer_type', 'computer_key'].includes(t.function.name)),
+    needsApproval: name => ['write_file', 'remember', 'browser_click', 'browser_type', 'computer_exec', 'computer_click', 'computer_move', 'computer_scroll', 'computer_type', 'computer_key', 'schedule_task'].includes(name),
   };
 }
 module.exports = { createTools, definitions };

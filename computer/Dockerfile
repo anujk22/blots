@@ -4,7 +4,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     thunar mousepad chromium python3 socat fonts-dejavu adwaita-icon-theme \
     ca-certificates curl procps tzdata && rm -rf /var/lib/apt/lists/*
 RUN useradd -m -u 1000 -s /bin/bash blots && mkdir -p /opt/blots /workspace && chown -R blots:blots /workspace
-COPY guest.py home.html start.sh /opt/blots/
+COPY guest.py home.html start.sh mascot.png wallpaper.png /opt/blots/
 RUN chmod +x /opt/blots/start.sh
 USER blots
 WORKDIR /workspace

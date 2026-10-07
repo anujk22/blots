@@ -9,9 +9,9 @@ const paths = {
   expand: 'M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5', close: 'M6 6l12 12M18 6 6 18', edit: 'm4 16-1 5 5-1L20 8l-5-5L4 16ZM12 6l5 5', trash: 'M4 7h16M9 7V4h6v3M6 7l1 14h10l1-14M10 11v6M14 11v6', search: 'M15 15l6 6M17 10a7 7 0 1 1-14 0 7 7 0 0 1 14 0Z', down: 'M6 9l6 6 6-6', check: 'm5 12 4 4L19 6', download: 'M12 3v12M7 10l5 5 5-5M4 16v5h16v-5', folder: 'M3 6h7l2 3h9v11H3V6Z', terminal: 'm5 6 6 6-6 6M13 18h6', back: 'M19 12H5M11 6l-6 6 6 6', play: 'm8 4 12 8-12 8V4Z', pause: 'M7 5v14M17 5v14',
 };
 const icon = name => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${paths[name] || paths.chat}"/></svg>`;
-const avatar = (bot, size = '') => `<span class="avatar" ${size ? `style="width:${size}px;height:${size}px"` : ''}><svg viewBox="0 0 120 120" aria-hidden="true"><path fill="${esc(bot?.color || '#2155ee')}" d="M60 7c12-8 26 0 31 12 16-1 26 14 21 29 13 12 7 30-7 36 2 17-15 28-30 22-12 13-30 8-37-6-16 3-29-10-25-26C0 63 5 44 18 37 17 20 34 11 48 17c3-6 7-9 12-10Z"/><ellipse fill="white" cx="45" cy="53" rx="5" ry="8"/><ellipse fill="white" cx="74" cy="53" rx="5" ry="8"/><path d="M53 74q7 7 14 0" fill="none" stroke="white" stroke-width="4" stroke-linecap="round"/></svg></span>`;
+const avatar = (bot, size = '') => `<span class="avatar" style="--bot-color:${esc(bot?.color || '#2155ee')};${size ? `width:${size}px;height:${size}px` : ''}"><img src="/mascot.png" alt=""></span>`;
 const date = value => new Date(value).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
-const humanTool = value => ({ search_web: 'Search the web', browser_open: 'Open a page', browser_read: 'Read a page', browser_click: 'Click on a page', browser_type: 'Enter text', write_file: 'Save a file', read_file: 'Read a file', list_files: 'List files', remember: 'Save a memory', computer_exec: 'Run a command', computer_launch: 'Open an app', computer_screenshot: 'See the desktop', computer_click: 'Click the desktop', computer_type: 'Type on the desktop', computer_key: 'Press a key', delegate_task: 'Delegate to a bot', schedule_task: 'Schedule a task' }[value] || value);
+const humanTool = value => ({ search_web: 'Search the web', browser_open: 'Open a page', browser_read: 'Read a page', browser_click: 'Click on a page', browser_type: 'Enter text', write_file: 'Save a file', read_file: 'Read a file', list_files: 'List files', remember: 'Save a memory', computer_exec: 'Run a command', computer_launch: 'Open an app', computer_screenshot: 'See the desktop', computer_click: 'Click the desktop', computer_move: 'Move the mouse', computer_scroll: 'Scroll the desktop', computer_type: 'Type on the desktop', computer_key: 'Press a key', delegate_task: 'Delegate to a bot', schedule_task: 'Schedule a task' }[value] || value);
 
 function markdown(text) {
   const doc = new DOMParser().parseFromString(marked.parse(text), 'text/html');
@@ -155,26 +155,29 @@ let controlSignature = '';
 function updateComputer() {
   if (!$('#screen-host')) return;
   const computer = currentComputer(), starting = state.startingComputers.includes(selectedBot), bot = currentBot();
+  const run = state.runs.find(r => r.botId === selectedBot && isLive(r));
+  const step = run?.steps.at(-1);
+  const activity = run ? run.approval ? 'Waiting for your approval' : step?.status === 'running' ? `${humanTool(step.tool)} · Desktop ${step.args?.screen ?? 1}` : run.status === 'queued' ? 'Waiting for the model' : 'Thinking…' : '';
   if (!computer) {
     destroyScreen();
     const signature = `off:${starting}:${screenError}`;
-    if ($('#screen-host').dataset.state !== signature) { $('#screen-host').dataset.state = signature; $('#screen-host').innerHTML = `<section class="desktop-off">${avatar(bot)}<h3>${starting ? 'Starting your computer…' : 'A computer of my own.'}</h3><p>${esc(screenError || 'Four screens. A browser, files, and a terminal. All running here on your Mac.')}</p><button class="button small" id="start-computer" ${starting ? 'disabled' : ''}>${starting ? 'Starting…' : 'Start computer'}</button></section>`; $('#start-computer').onclick = () => action(startComputer); }
+    if ($('#screen-host').dataset.state !== signature) { $('#screen-host').dataset.state = signature; $('#screen-host').innerHTML = `<section class="desktop-off">${avatar(bot)}<h3>${starting ? 'Starting your computer…' : 'A computer of my own.'}</h3><p>${esc(screenError || 'A browser, files, and a terminal. A real Linux desktop, running here on your Mac.')}</p><button class="button small" id="start-computer" ${starting ? 'disabled' : ''}>${starting ? 'Starting…' : 'Start computer'}</button></section>`; $('#start-computer').onclick = () => action(startComputer); }
   } else {
     const key = `${selectedBot}:${selectedScreen}`;
     if (rfbKey !== key) {
       destroyScreen(); const host = $('#screen-host'); host.innerHTML = '<div id="vnc-screen"></div>'; host.dataset.state = 'ready';
       rfbKey = key; rfb = new RFB($('#vnc-screen'), `${location.origin.replace('http', 'ws')}/vnc?bot=${encodeURIComponent(selectedBot)}&screen=${selectedScreen}`, { shared: true });
-      rfb.scaleViewport = true; rfb.resizeSession = false; rfb.viewOnly = !isControl(); rfb.qualityLevel = 7; rfb.compressionLevel = 2; rfb.background = '#e9f0ff';
+      rfb.scaleViewport = true; rfb.resizeSession = false; rfb.viewOnly = !isControl(); rfb.qualityLevel = 7; rfb.compressionLevel = 2; rfb.background = '#000000';
       rfb.addEventListener('connect', () => { screenError = ''; updateComputer(); });
       rfb.addEventListener('disconnect', event => { if (rfbKey === key) { rfbKey = ''; screenError = event.detail.clean ? '' : 'Screen connection dropped. Reconnecting…'; } });
     }
     if (rfb) rfb.viewOnly = !isControl();
   }
   $('#desktop-tag').textContent = computer ? 'Live · on your Mac' : 'On your Mac';
-  const signature = `${!!computer}:${isControl()}:${selectedScreen}`;
+  const signature = `${!!computer}:${isControl()}:${selectedScreen}:${activity}`;
   if (signature !== controlSignature || !$('#control-row').children.length) {
     controlSignature = signature;
-    $('#control-row').innerHTML = computer ? `<span>${isControl() ? 'You have control' : `${esc(bot.name)} has control`}</span><button class="button small ${isControl() ? '' : 'secondary'}" id="take-control">${isControl() ? 'Hand back' : 'Take over'}</button><button class="icon-button" id="stop-computer" aria-label="Stop computer" title="Stop computer">${icon('stop')}</button>` : '<span>No cloud computers. No account required.</span>';
+    $('#control-row').innerHTML = computer ? `<span>${isControl() ? 'You have control' : `${esc(bot.name)} has control${activity ? ` · ${esc(activity)}` : ''}`}</span><button class="button small ${isControl() ? '' : 'secondary'}" id="take-control">${isControl() ? 'Hand back' : 'Take over'}</button><button class="icon-button" id="stop-computer" aria-label="Stop computer" title="Stop computer">${icon('stop')}</button>` : '<span>No cloud computers. No account required.</span>';
     if ($('#take-control')) $('#take-control').onclick = () => action(async () => { await api('/api/computer/control', { botId: selectedBot, screen: selectedScreen, on: !isControl() }); await refresh(); });
     if ($('#stop-computer')) $('#stop-computer').onclick = () => action(async () => { await api('/api/computer/stop', { botId: selectedBot }); destroyScreen(); await refresh(); });
   }

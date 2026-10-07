@@ -105,3 +105,24 @@ test('delegation queues a teammate after the parent without deadlock', async () 
     assert.equal(app.store.state.chats.find(c => c.botId === 'scout').messages.at(-1).content, 'Child task complete.');
   } finally { await app.close(); await model.close(); }
 });
+
+test('real mouse inputs stay behind approval and require visual tools to be enabled', async () => {
+  const { createTools } = require('../src/tools.cjs');
+  const tools = createTools(createStore(temp()), {});
+  for (const name of ['computer_move', 'computer_click', 'computer_scroll', 'computer_type', 'computer_key']) {
+    assert.equal(tools.needsApproval(name), true);
+    assert.equal(tools.definitionsFor(false).some(t => t.function.name === name), false);
+    assert.equal(tools.definitionsFor(true).some(t => t.function.name === name), true);
+  }
+  const model = await fakeModel(request => request.messages.some(m => m.role === 'tool') ? { content: 'Mouse moved.' } : { tool_calls: [{ index: 0, id: 'move', type: 'function', function: { name: 'computer_move', arguments: '{"x":400,"y":300,"screen":1}' } }] });
+  const app = await createServer({ port: 0, dataDir: temp() });
+  Object.assign(app.store.state.settings, { baseUrl: model.base, model: 'test-model', vision: true });
+  const inputs = []; app.computers.guest = async (...args) => { inputs.push(args); return { ok: true }; };
+  const chat = { id: crypto.randomUUID(), botId: 'blot', title: 'mouse test', messages: [] }; app.store.state.chats.push(chat);
+  try {
+    const run = app.agent.start(chat.id, 'Move the pointer.');
+    await wait(() => run.approval); assert.equal(inputs.length, 0);
+    app.agent.approve(run.approval.id, true); await wait(() => run.status === 'done');
+    assert.equal(inputs.length, 1); assert.deepEqual(inputs[0].slice(0, 3), ['blot', '/input', { kind: 'move', x: 400, y: 300, screen: 1 }]);
+  } finally { await app.close(); await model.close(); }
+});

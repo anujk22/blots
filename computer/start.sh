@@ -33,7 +33,7 @@ done
 sleep 1
 for n in 1 2 3 4; do
   DISPLAY=:$n xfwm4 --compositor=off > /tmp/wm-$n.log 2>&1 &
-  x11vnc -display :$n -forever -shared -nopw -rfbport $((5900+n)) -quiet > /tmp/vnc-$n.log 2>&1 &
+  x11vnc -display :$n -forever -shared -nopw -nocursorshape -nocursorpos -rfbport $((5900+n)) -quiet > /tmp/vnc-$n.log 2>&1 &
   DISPLAY=:$n chromium --no-sandbox --test-type --force-dark-mode --disable-dev-shm-usage --no-first-run \
     --hide-crash-restore-bubble --password-store=basic --disable-background-networking \
     --remote-debugging-port=$((9220+n)) \

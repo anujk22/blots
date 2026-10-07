@@ -1,4 +1,4 @@
-import json, os, subprocess, tempfile
+import json, os, subprocess, tempfile, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
@@ -24,12 +24,15 @@ class Handler(BaseHTTPRequestHandler):
         if u.path == '/':
             with open('/opt/blots/home.html', 'rb') as f:
                 return self.reply(f.read(), kind='text/html; charset=utf-8')
+        if u.path in ['/mascot.png', '/wallpaper.png']:
+            with open('/opt/blots'+u.path, 'rb') as f:
+                return self.reply(f.read(), kind='image/png')
         if u.path == '/health':
             return self.reply({'ready': True, 'name': os.environ.get('BLOT_NAME', 'Blot')})
         if u.path == '/screenshot':
             fd, filename = tempfile.mkstemp(suffix='.png'); os.close(fd)
             try:
-                subprocess.run(['scrot', '-o', filename], env=dict(os.environ, DISPLAY=':'+screen), timeout=10, check=True, capture_output=True)
+                subprocess.run(['scrot', '--pointer', '-o', filename], env=dict(os.environ, DISPLAY=':'+screen), timeout=10, check=True, capture_output=True)
                 with open(filename, 'rb') as f:
                     return self.reply(f.read(), kind='image/png')
             finally:
@@ -70,11 +73,21 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply({'output': output.decode(errors='replace')[-20000:], 'exitCode': proc.returncode})
             if self.path == '/input':
                 kind = data.get('kind')
-                if kind == 'click':
+                if kind in ['click', 'move']:
                     x, y = int(data['x']), int(data['y'])
                     if not (0 <= x < 1280 and 0 <= y < 800):
                         raise ValueError('Click outside the screen')
-                    cmd = ['xdotool', 'mousemove', str(x), str(y), 'click', '1']
+                    position = subprocess.run(['xdotool', 'getmouselocation', '--shell'], env=env, check=True, capture_output=True, text=True).stdout
+                    start = dict(line.split('=', 1) for line in position.splitlines())
+                    for step in range(1, 17):
+                        t = step / 16
+                        t = t*t*(3-2*t)
+                        px, py = round(int(start['X'])+(x-int(start['X']))*t), round(int(start['Y'])+(y-int(start['Y']))*t)
+                        subprocess.run(['xdotool', 'mousemove', str(px), str(py)], env=env, check=True, capture_output=True)
+                        time.sleep(0.02)
+                    if kind == 'move':
+                        return self.reply({'ok': True, 'x': x, 'y': y})
+                    cmd = ['xdotool', 'click', '1']
                 elif kind == 'type':
                     text = data.get('text', '')
                     if not isinstance(text, str) or len(text) > 20000:
@@ -86,10 +99,12 @@ class Handler(BaseHTTPRequestHandler):
                         raise ValueError('Unsupported key')
                     cmd = ['xdotool', 'key', '--clearmodifiers', key]
                 elif kind == 'scroll':
+                    if data.get('direction') not in ['up', 'down']:
+                        raise ValueError('Scroll direction must be up or down')
                     cmd = ['xdotool', 'click', '--repeat', '4', '4' if data.get('direction') == 'up' else '5']
                 else:
                     raise ValueError('Unsupported input')
-                subprocess.run(cmd, env=env, check=True, timeout=15, capture_output=True)
+                subprocess.run(cmd, env=env, check=True, timeout=30 if kind == 'type' else 15, capture_output=True)
                 return self.reply({'ok': True})
             self.reply({'error': 'Not found'}, 404)
         except Exception as e:
