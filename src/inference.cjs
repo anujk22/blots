@@ -28,7 +28,7 @@ async function complete(settings, messages, tools, signal, onDelta) {
   const res = await fetch(localBase(settings.baseUrl) + '/chat/completions', {
     method: 'POST', redirect: 'error', signal,
     headers: { 'Content-Type': 'application/json', ...(settings.apiKey ? { Authorization: `Bearer ${settings.apiKey}` } : {}) },
-    body: JSON.stringify({ model: settings.model, messages, temperature: settings.temperature, max_tokens: settings.maxTokens, stream: true, ...(effort ? { reasoning_effort: effort } : {}), ...(tools.length ? { tools, tool_choice: 'auto' } : {}) }),
+    body: JSON.stringify({ model: settings.model, messages, temperature: settings.temperature, max_tokens: settings.maxTokens, stream: true, stream_options: { include_usage: true }, ...(reasoningOptions(settings.model).length ? { preserve_thinking: true } : {}), ...(effort ? { reasoning_effort: effort } : {}), ...(tools.length ? { tools, tool_choice: 'auto' } : {}) }),
   });
   if (!res.ok) {
     const body = (await res.text()).slice(0, 600);
@@ -43,7 +43,7 @@ async function complete(settings, messages, tools, signal, onDelta) {
   }
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
-  let buffer = '', content = '', usage, finishReason;
+  let buffer = '', content = '', reasoning = '', usage, finishReason;
   const calls = new Map();
   const consume = line => {
     if (!line.startsWith('data:')) return;
@@ -55,6 +55,7 @@ async function complete(settings, messages, tools, signal, onDelta) {
     if (data.choices?.[0]?.finish_reason) finishReason = data.choices[0].finish_reason;
     const delta = data.choices?.[0]?.delta;
     if (!delta) return;
+    if (delta.reasoning_content) reasoning += delta.reasoning_content;
     if (delta.content) { content += delta.content; onDelta(delta.content); }
     for (const part of delta.tool_calls || []) {
       const call = calls.get(part.index) || { id: '', type: 'function', function: { name: '', arguments: '' } };
@@ -75,7 +76,7 @@ async function complete(settings, messages, tools, signal, onDelta) {
     buffer += decoder.decode();
     if (buffer.trim()) consume(buffer.trim());
   } finally { reader.releaseLock(); }
-  return { role: 'assistant', content: content || null, ...(calls.size ? { tool_calls: [...calls.values()] } : {}), usage, finishReason };
+  return { role: 'assistant', content: content || null, ...(reasoning ? { reasoning_content: reasoning } : {}), ...(calls.size ? { tool_calls: [...calls.values()] } : {}), usage, finishReason };
 }
 
 module.exports = { localBase, models, complete, reasoningOptions };

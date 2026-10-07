@@ -90,9 +90,11 @@ async function createServer(options = {}) {
           }
           if (data.apiKey !== undefined) s.apiKey = String(data.apiKey).slice(0, 1000);
           if (data.vision !== undefined) s.vision = data.vision === true;
-          for (const [key, min, max] of [['temperature', 0, 2], ['maxTokens', 256, 16384], ['maxSteps', 1, 1000], ['maxMinutes', 1, 480]]) if (data[key] !== undefined) {
+          for (const [key, min, max] of [['temperature', 0, 2], ['maxTokens', 256, 65536], ['contextTokens', 8192, 131072], ['computerCpus', 1, 4], ['computerMemoryMiB', 1024, 4096], ['maxSteps', 1, 1000], ['maxMinutes', 1, 480]]) if (data[key] !== undefined) {
             const n = Number(data[key]); if (!Number.isFinite(n) || n < min || n > max || (key !== 'temperature' && !Number.isInteger(n))) throw new Error(`Invalid ${key}.`); s[key] = n;
           }
+          if (s.contextTokens <= s.maxTokens+1024) throw new Error('The task context budget must leave room beyond the output budget.');
+          if (s.computerMemoryMiB%512) throw new Error('Choose desktop memory in half-GiB increments.');
           store.state.settings = s; store.save(); return json(res, { ok: true });
         }
         if (route === '/api/chats' && method === 'POST') { const data = await body(req); return json(res, newChat(data.botId)); }

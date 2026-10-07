@@ -14,6 +14,22 @@ function createComputers(store) {
   const controls = new Set();
   const waiters = new Map();
   const runDocker = (args, timeout = 30000) => exec(dockerPath(), args, { timeout, maxBuffer: 4 * 1024 * 1024 });
+  let runtimeStarting;
+  async function ensureRuntime() {
+    if (!runtimeStarting) runtimeStarting = (async () => {
+      try { await runDocker(['info', '--format', '{{.ServerVersion}}'], 10000); return; }
+      catch {
+        if (process.platform !== 'darwin' || !fs.existsSync('/Applications/Docker.app')) throw new Error('Install Docker Desktop before starting a Linux computer.');
+        await exec('/usr/bin/open', ['-g', '-j', '-a', '/Applications/Docker.app']);
+        for (let i = 0; i < 80; i++) {
+          try { await runDocker(['info', '--format', '{{.ServerVersion}}'], 1000); return; } catch {}
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+        throw new Error('Docker could not start in the background. Open Docker Desktop to check whether it needs attention, then try again.');
+      }
+    })().finally(() => { runtimeStarting = null; });
+    return runtimeStarting;
+  }
   const namespace = createHash('sha256').update(store.dataDir).digest('hex').slice(0, 8);
   const name = botId => `blots-${namespace}-${botId}`;
   function appearance(botId) {
@@ -31,8 +47,8 @@ function createComputers(store) {
     if (computers.size + starting.size >= 3) throw new Error('Three computers are already open. Stop one before starting another to leave room for your local model.');
     const job = (async () => {
       appearance(botId);
-      try { await runDocker(['info', '--format', '{{.ServerVersion}}'], 10000); }
-      catch { throw new Error('Open Docker Desktop, wait for it to start, then start this computer.'); }
+      await ensureRuntime();
+      const cpus = store.state.settings.computerCpus, memory = store.state.settings.computerMemoryMiB;
       let image;
       try { image = JSON.parse((await runDocker(['image', 'inspect', IMAGE])).stdout)[0]; }
       catch { throw new Error('The Blots desktop image is missing. Open Settings and build the computer image first.'); }
@@ -46,11 +62,12 @@ function createComputers(store) {
       }
       if (!container) {
         const home = path.join(store.dataDir, 'computers', botId);
-        const args = ['run', '-d', '--name', name(botId), '--label', 'app=blots', '--memory', '2g', '--cpus', '2', '--shm-size', '512m', '--log-opt', 'max-size=5m', '--log-opt', 'max-file=2', '--security-opt', 'no-new-privileges', '-e', `TZ=${Intl.DateTimeFormat().resolvedOptions().timeZone}`, '-v', `${home}:/home/blots`, '-v', `${store.workspace}:/workspace`];
+        const args = ['run', '-d', '--name', name(botId), '--label', 'app=blots', '--memory', `${memory}m`, '--cpus', String(cpus), '--shm-size', '512m', '--log-opt', 'max-size=5m', '--log-opt', 'max-file=2', '--security-opt', 'no-new-privileges', '-e', `TZ=${Intl.DateTimeFormat().resolvedOptions().timeZone}`, '-v', `${home}:/home/blots`, '-v', `${store.workspace}:/workspace`];
         for (const port of [8766, 5901, 5902, 5903, 5904, 9231, 9232, 9233, 9234]) args.push('-p', `127.0.0.1::${port}`);
         args.push(IMAGE); await runDocker(args);
         container = JSON.parse((await runDocker(['inspect', name(botId)])).stdout)[0];
       }
+      if (container.HostConfig.Memory !== memory*1024*1024 || container.HostConfig.NanoCpus !== cpus*1e9) await runDocker(['update', '--memory', `${memory}m`, '--memory-swap', `${memory*2}m`, '--cpus', String(cpus), name(botId)]);
       if (!container.State.Running) {
         await runDocker(['start', name(botId)]);
         container = JSON.parse((await runDocker(['inspect', name(botId)])).stdout)[0];
@@ -139,6 +156,7 @@ function createComputers(store) {
     status: () => [...computers.keys()].map(botId => ({ botId, status: 'ready', controlled: [1, 2, 3, 4].filter(n => controls.has(`${botId}:${n}`)) })),
     starting: () => [...starting.keys()],
     build: async onOutput => {
+      await ensureRuntime();
       const { spawn } = require('node:child_process');
       return new Promise((resolve, reject) => {
         const root = path.join(__dirname, '..', 'computer').replace('app.asar/', 'app.asar.unpacked/');

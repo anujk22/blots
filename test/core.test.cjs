@@ -14,14 +14,14 @@ const wait = async predicate => {
   for (let i = 0; i < 100; i++) { const value = await predicate(); if (value) return value; await new Promise(r => setTimeout(r, 15)); }
   throw new Error('Timed out waiting for state.');
 };
-async function fakeModel(fn) {
+async function fakeModel(fn, metadata = {}) {
   const server = http.createServer(async (req, res) => {
     if (req.url === '/v1/models') { res.setHeader('Content-Type', 'application/json'); return res.end(JSON.stringify({ data: [{ id: 'test-model' }] })); }
     let data = ''; for await (const chunk of req) data += chunk;
     const message = await fn(JSON.parse(data));
     res.writeHead(200, { 'Content-Type': 'text/event-stream' });
     // Split SSE events across network chunks to exercise incremental decoding.
-    const output = 'data: ' + JSON.stringify({ choices: [{ delta: message }] }) + '\n\ndata: [DONE]\n\n';
+    const output = 'data: ' + JSON.stringify({ choices: [{ delta: message }] }) + '\n\n'+(Object.keys(metadata).length ? 'data: '+JSON.stringify({choices:[{delta:{},finish_reason:metadata.finishReason||null}],...(metadata.usage?{usage:metadata.usage}:{})})+'\n\n' : '')+'data: [DONE]\n\n';
     for (let i = 0; i < output.length; i += 7) res.write(output.slice(i, i + 7)); res.end();
   });
   await new Promise(r => server.listen(0, '127.0.0.1', r));
@@ -352,7 +352,7 @@ test('long tasks cross the old 12-turn boundary and compact large tool context w
   try {
     const run = app.agent.start(chat.id, 'Do a long inspection of this desktop.'); await wait(() => ['done','failed','paused'].includes(run.status));
     assert.equal(run.status, 'done', run.error); assert.equal(moves.length, 26); assert.equal(run.turns, 27);
-    assert.ok(summaries >= 2); assert.ok(largest < 85000, largest); assert.equal(run.resumable, false);
+    assert.ok(summaries >= 2); assert.ok(largest < 160000, largest); assert.equal(run.resumable, false);
     assert.equal(fs.existsSync(path.join(directory,'tasks',run.id+'.json')), false);
   } finally { await app.close(); await model.close(); }
 });
@@ -439,4 +439,53 @@ test('elapsed session budget pauses with a checkpoint and prevents a late tool a
   const chat={id:crypto.randomUUID(),botId:'blot',title:'test',messages:[]};app.store.state.chats.push(chat);
   try {const run=app.agent.start(chat.id,'Save a note.');await wait(()=>run.status==='paused');assert.match(run.error,/Paused after/);assert.equal(run.resumable,true);assert.equal(fs.existsSync(path.join(app.store.workspace,'late.md')),false);}
   finally {await app.close();await model.close();}
+});
+
+test('thinking is carried through tool turns and checkpoints without fixed 12-turn compaction', async () => {
+  let decisions=0,summaries=0;
+  const model=await fakeModel(request=>{
+    assert.equal(request.preserve_thinking,true);assert.equal(request.stream_options.include_usage,true);
+    if(request.messages[0].content.startsWith('Save a factual task checkpoint.')){summaries++;return {content:'Task progress saved.'};}
+    if(decisions) assert.equal(request.messages.filter(m=>m.role==='assistant'&&m.tool_calls).at(-1).reasoning_content,'Check dependency '+decisions);
+    return decisions++<15?{reasoning_content:'Check dependency '+decisions,tool_calls:[{index:0,id:'move-'+decisions,type:'function',function:{name:'computer_move',arguments:JSON.stringify({x:100+decisions,y:300})}}]}:{content:'All fifteen checks complete.'};
+  });
+  const dir=temp(),app=await createServer({port:0,dataDir:dir});Object.assign(app.store.state.settings,{baseUrl:model.base,model:'incoai/Qwen3.6-35B-A3B-Splash',vision:true,maxSteps:15});app.store.state.bots[0].autoApproveLinux=true;app.computers.guest=async()=>({ok:true});
+  const chat={id:crypto.randomUUID(),botId:'blot',title:'test',messages:[]};app.store.state.chats.push(chat);
+  try{const run=app.agent.start(chat.id,'Check fifteen dependencies.');await wait(()=>['paused','failed'].includes(run.status));assert.equal(run.status,'paused',run.error);assert.equal(summaries,0);
+    const checkpoint=JSON.parse(fs.readFileSync(path.join(dir,'tasks',run.id+'.json'),'utf8'));assert.equal(checkpoint.messages.filter(m=>m.reasoning_content).length,15);
+    app.agent.resume(run.id);await wait(()=>run.status==='done');assert.equal(summaries,0);
+  }finally{await app.close();await model.close();}
+});
+
+test('reasoning/output and context budgets migrate once and validate independently of task turns', async()=>{
+ const dir=temp(),old=createStore(dir);delete old.state.settings.contextTokens;Object.assign(old.state.settings,{model:'audreyt/Qwen3.8-27B-Splash-abliterated',maxTokens:4096});old.save();
+ const migrated=createStore(dir);assert.equal(migrated.state.settings.maxTokens,16384);assert.equal(migrated.state.settings.contextTokens,65536);
+ migrated.state.settings.maxTokens=8192;migrated.save();assert.equal(createStore(dir).state.settings.maxTokens,8192);
+ const app=await createServer({port:0,dataDir:dir});const save=data=>fetch(app.origin+'/api/settings',{method:'POST',headers:{'X-Blots':'1','Content-Type':'application/json'},body:JSON.stringify(data)});
+ try{assert.equal((await save({maxTokens:32768,contextTokens:98304})).status,200);for(const data of[{maxTokens:65537},{contextTokens:4096},{contextTokens:131073}])assert.equal((await save(data)).status,400);}finally{await app.close();}
+});
+
+test('desktop limits default to light browsing, persist, and reject unsupported slider values', async()=>{
+ const dir=temp(),app=await createServer({port:0,dataDir:dir});const save=data=>fetch(app.origin+'/api/settings',{method:'POST',headers:{'X-Blots':'1','Content-Type':'application/json'},body:JSON.stringify(data)});
+ try{assert.equal(app.store.state.settings.computerCpus,1);assert.equal(app.store.state.settings.computerMemoryMiB,1024);
+   assert.equal((await save({computerCpus:2,computerMemoryMiB:1536})).status,200);const restored=createStore(dir);assert.equal(restored.state.settings.computerCpus,2);assert.equal(restored.state.settings.computerMemoryMiB,1536);
+   for(const data of[{computerCpus:0},{computerCpus:1.5},{computerCpus:5},{computerMemoryMiB:512},{computerMemoryMiB:1200},{computerMemoryMiB:4097},{contextTokens:16384,maxTokens:16384}])assert.equal((await save(data)).status,400);
+ }finally{await app.close();}
+});
+
+test('a reasoning output limit pauses without executing even an apparently complete tool call', async()=>{
+ const model=await fakeModel(()=>({reasoning_content:'Still checking dependencies.',tool_calls:[{index:0,id:'cut',type:'function',function:{name:'write_file',arguments:'{"path":"cut.md","content":"do not execute"}'}}]}),{finishReason:'length'});
+ const app=await createServer({port:0,dataDir:temp()});Object.assign(app.store.state.settings,{baseUrl:model.base,model:'audreyt/Qwen3.8-27B-Splash-abliterated'});app.store.state.bots[0].autoApproveLinux=true;
+ const chat={id:crypto.randomUUID(),botId:'blot',title:'test',messages:[]};app.store.state.chats.push(chat);
+ try{const run=app.agent.start(chat.id,'Save only when thinking is complete.');await wait(()=>['paused','failed','done'].includes(run.status));assert.equal(run.status,'paused');assert.match(run.error,/thinking plus reply/);assert.equal(run.steps.length,0);assert.equal(run.resumable,true);assert.equal(fs.existsSync(path.join(app.store.workspace,'cut.md')),false);}finally{await app.close();await model.close();}
+});
+
+test('reported token usage triggers pressure compaction even for a short text transcript', async()=>{
+ let summaries=0;const model=await fakeModel(request=>{
+  if(request.messages[0].content.startsWith('Save a factual task checkpoint.')){summaries++;return {content:'Verified one mouse move. Original goal: inspect once. Finish reporting.'};}
+  return request.messages.some(m=>m.role==='tool')?{content:'Inspection complete.'}:{tool_calls:[{index:0,id:'move',type:'function',function:{name:'computer_move',arguments:'{"x":400,"y":300}'}}]};
+ },{usage:{prompt_tokens:60000,completion_tokens:512,total_tokens:60512}});
+ const app=await createServer({port:0,dataDir:temp()});Object.assign(app.store.state.settings,{baseUrl:model.base,model:'test-model',vision:true});app.store.state.bots[0].autoApproveLinux=true;app.computers.guest=async()=>({ok:true});
+ const chat={id:crypto.randomUUID(),botId:'blot',title:'test',messages:[]};app.store.state.chats.push(chat);
+ try{const run=app.agent.start(chat.id,'Inspect once.');await wait(()=>run.status==='done');assert.equal(summaries,1);assert.equal(run.steps.length,1);}finally{await app.close();await model.close();}
 });

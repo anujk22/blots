@@ -6,7 +6,7 @@ const id = () => randomUUID();
 const now = () => new Date().toISOString();
 const initial = () => ({
   version: 1,
-  settings: { baseUrl: 'http://127.0.0.1:8000/v1', model: '', apiKey: '', temperature: 0.6, maxTokens: 4096, maxSteps: 120, maxMinutes: 120, vision: false, reasoningEffort: '', chatShare: 0.44 },
+  settings: { baseUrl: 'http://127.0.0.1:8000/v1', model: '', apiKey: '', temperature: 0.6, maxTokens: 16384, contextTokens: 65536, maxSteps: 120, maxMinutes: 120, computerCpus: 1, computerMemoryMiB: 1024, vision: false, reasoningEffort: '', chatShare: 0.44 },
   bots: [
     { id: 'blot', name: 'Blot', role: 'Your everyday assistant', instructions: 'Help with planning, research, writing, and organizing. Be clear and practical.', color: '#2155ee' },
     { id: 'scout', name: 'Scout', role: 'Research & discovery', instructions: 'Research carefully. Use browser tools to read sources when asked. Cite URLs. Distinguish evidence from assumptions.', color: '#227f92' },
@@ -29,6 +29,12 @@ function createStore(dataDir) {
     state.settings.maxMinutes = 120;
     if (state.settings.maxSteps === 12) state.settings.maxSteps = 120;
   }
+  if (state.settings.contextTokens === undefined) {
+    state.settings.contextTokens = 65536;
+    if (state.settings.maxTokens === 4096 && require('./inference.cjs').reasoningOptions(state.settings.model).length) state.settings.maxTokens = 16384;
+  }
+  state.settings.computerCpus ??= 1;
+  state.settings.computerMemoryMiB ??= 1024;
   const save = () => {
     fs.writeFileSync(file + '.tmp', JSON.stringify(state), { mode: 0o600 });
     fs.renameSync(file + '.tmp', file);
