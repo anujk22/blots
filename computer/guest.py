@@ -24,8 +24,9 @@ class Handler(BaseHTTPRequestHandler):
         if u.path == '/':
             with open('/opt/blots/home.html', 'rb') as f:
                 return self.reply(f.read(), kind='text/html; charset=utf-8')
-        if u.path in ['/mascot.png', '/wallpaper.png']:
-            with open('/opt/blots'+u.path, 'rb') as f:
+        icons = {'/icons/browser.png': '/usr/share/icons/hicolor/48x48/apps/chromium.png', '/icons/files.png': 'places/folder.png', '/icons/terminal.png': 'legacy/utilities-terminal.png', '/icons/editor.png': 'legacy/accessories-text-editor.png'}
+        if u.path in icons:
+            with open(icons[u.path] if icons[u.path].startswith('/') else '/usr/share/icons/Adwaita/48x48/'+icons[u.path], 'rb') as f:
                 return self.reply(f.read(), kind='image/png')
         if u.path == '/health':
             return self.reply({'ready': True, 'name': os.environ.get('BLOT_NAME', 'Blot')})
@@ -52,7 +53,7 @@ class Handler(BaseHTTPRequestHandler):
                 raise ValueError('Invalid screen')
             env = dict(os.environ, DISPLAY=':'+screen)
             if self.path == '/launch':
-                commands = {'terminal': ['xfce4-terminal', '--disable-server'], 'files': ['thunar', '/workspace'], 'editor': ['mousepad', '--disable-server'], 'browser': ['chromium', '--no-sandbox', '--password-store=basic', '--user-data-dir=/home/blots/profiles/s'+screen, '--new-window', 'about:blank']}
+                commands = {'terminal': ['xfce4-terminal', '--disable-server'], 'files': ['thunar', '/workspace'], 'editor': ['mousepad', '--disable-server'], 'browser': ['chromium', '--no-sandbox', '--test-type', '--force-dark-mode', '--no-first-run', '--password-store=basic', '--user-data-dir=/home/blots/profiles/s'+screen, '--new-window', 'about:blank']}
                 command = commands.get(data.get('app'))
                 if not command:
                     raise ValueError('Unknown application')
