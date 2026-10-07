@@ -1,10 +1,11 @@
-import json, os, subprocess, tempfile, time
+import json, os, subprocess, tempfile
 import mimetypes
 from pathlib import Path
 import gi
 gi.require_version('Gtk', '3.0')
 from gi.repository import Gtk
 from desktop import appearance, APPS
+from pointer import move
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
@@ -105,14 +106,7 @@ class Handler(BaseHTTPRequestHandler):
                     x, y = int(data['x']), int(data['y'])
                     if not (0 <= x < 1280 and 0 <= y < 960):
                         raise ValueError('Click outside the screen')
-                    position = subprocess.run(['xdotool', 'getmouselocation', '--shell'], env=env, check=True, capture_output=True, text=True).stdout
-                    start = dict(line.split('=', 1) for line in position.splitlines())
-                    for step in range(1, 17):
-                        t = step / 16
-                        t = t*t*(3-2*t)
-                        px, py = round(int(start['X'])+(x-int(start['X']))*t), round(int(start['Y'])+(y-int(start['Y']))*t)
-                        subprocess.run(['xdotool', 'mousemove', str(px), str(py)], env=env, check=True, capture_output=True)
-                        time.sleep(0.02)
+                    move(':'+screen, x, y)
                     if kind == 'move':
                         return self.reply({'ok': True, 'x': x, 'y': y})
                     cmd = ['xdotool', 'click', '1']

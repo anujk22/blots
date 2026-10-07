@@ -15,7 +15,7 @@ const definitions = [
   schema('browser_click', 'Click a numbered element from the latest browser read. Requires user approval.', { element: { type: 'integer' } }, ['element']),
   schema('browser_type', 'Fill a numbered input from the latest browser read. Does not press Enter. Requires user approval.', { element: { type: 'integer' }, text: str('Text to enter') }, ['element', 'text']),
   schema('computer_exec', 'Run a bash command on your own Linux computer, never the user’s Mac. Working folder /workspace, 30-second limit. Requires approval.', { command: str('Bash command') }, ['command']),
-  schema('computer_launch', 'Launch a real app on your Linux desktop.', { app: { type: 'string', enum: Object.keys(require('../computer/apps.json')) } }, ['app']),
+  schema('computer_launch', 'Launch a real Linux app when its visible launcher is unavailable. Prefer clicking the desktop icon with computer_click.', { app: { type: 'string', enum: Object.keys(require('../computer/apps.json')) } }, ['app']),
   schema('computer_screenshot', 'See your real Linux screen as an image. Use to inspect native apps before acting.'),
   schema('computer_click', 'Click pixel coordinates on the 1280 by 960 desktop shown in your latest screenshot. Requires approval.', { x: { type: 'integer', minimum: 0, maximum: 1279 }, y: { type: 'integer', minimum: 0, maximum: 959 } }, ['x', 'y']),
   schema('computer_move', 'Move the real mouse pointer across your Linux desktop. Use for hover menus. Requires approval.', { x: { type: 'integer', minimum: 0, maximum: 1279 }, y: { type: 'integer', minimum: 0, maximum: 959 } }, ['x', 'y']),
@@ -75,7 +75,17 @@ function createTools(store, computers, handlers = {}) {
         if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error('Only ordinary HTTP and HTTPS pages can be opened.');
         const page = await computers.page(botId, screen, signal);
         await page.bringToFront();
-        await page.goto(url.href, { waitUntil: 'domcontentloaded', timeout: 30000 });
+        const point = await page.evaluate(() => {
+          const border = (outerWidth-innerWidth*devicePixelRatio)/2;
+          return { x: Math.round(screenX+outerWidth/2), y: Math.round(screenY+outerHeight-innerHeight*devicePixelRatio-border-24*devicePixelRatio) };
+        });
+        await computers.guest(botId, '/input', { kind: 'click', ...point, screen }, signal);
+        await computers.guest(botId, '/input', { kind: 'key', key: 'ctrl+a', screen }, signal);
+        await computers.guest(botId, '/input', { kind: 'type', text: url.href, screen }, signal);
+        await Promise.all([
+          page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 30000 }),
+          computers.guest(botId, '/input', { kind: 'key', key: 'Return', screen }, signal),
+        ]);
         return readPage(page);
       }
       case 'browser_read': {
@@ -124,7 +134,7 @@ function createTools(store, computers, handlers = {}) {
   return {
     execute, definitions,
     definitionsFor: vision => definitions.filter(t => vision || !['computer_screenshot', 'computer_click', 'computer_move', 'computer_scroll', 'computer_type', 'computer_key'].includes(t.function.name)),
-    needsApproval: (name, autoApproveLinux = false) => ['write_file', 'remember', 'browser_click', 'browser_type', 'computer_exec', 'computer_click', 'computer_move', 'computer_scroll', 'computer_type', 'computer_key', 'schedule_task'].includes(name) && !(autoApproveLinux && /^(browser_|computer_)/.test(name)),
+    needsApproval: (name, autoApproveLinux = false) => ['write_file', 'remember', 'browser_click', 'browser_type', 'computer_exec', 'computer_click', 'computer_move', 'computer_scroll', 'computer_type', 'computer_key', 'schedule_task'].includes(name) && !(autoApproveLinux && (/^(browser_|computer_)/.test(name) || name === 'write_file')),
   };
 }
 module.exports = { createTools, definitions };

@@ -127,6 +127,26 @@ test('real mouse inputs stay behind approval and require visual tools to be enab
   } finally { await app.close(); await model.close(); }
 });
 
+test('opening and searching a page use the visible address bar and accept redirects', async () => {
+  const { createTools } = require('../src/tools.cjs');
+  const calls = [];
+  const page = {
+    bringToFront: async () => calls.push('front'),
+    evaluate: async fn => fn.toString().includes('outerWidth') ? { x: 640, y: 140 } : { title: 'Destination', text: 'Loaded', elements: [] },
+    waitForNavigation: async () => calls.push('navigation'),
+    url: () => 'https://destination.test/redirected',
+  };
+  const tools = createTools(createStore(temp()), {
+    waitForControl: async () => {}, page: async () => page,
+    guest: async (bot, route, data) => calls.push(data),
+  });
+  for (const [tool, args, address] of [['browser_open', { url: 'https://destination.test/' }, 'https://destination.test/'], ['search_web', { query: 'visible search' }, 'https://www.google.com/search?q=visible%20search']]) {
+    calls.length = 0;
+    assert.equal((await tools.execute(tool, args, 'blot', new AbortController().signal)).url, 'https://destination.test/redirected');
+    assert.deepEqual(calls, ['front', { kind: 'click', x: 640, y: 140, screen: 1 }, { kind: 'key', key: 'ctrl+a', screen: 1 }, { kind: 'type', text: address, screen: 1 }, 'navigation', { kind: 'key', key: 'Return', screen: 1 }]);
+  }
+});
+
 test('reasoning sends the supported wire value and omits it for model default', async () => {
   const requests = [];
   const model = await fakeModel(request => { requests.push(request); return { content: 'OK' }; });
@@ -188,4 +208,68 @@ test('editing an agent updates its Linux appearance without replacing its files'
     assert.deepEqual(JSON.parse(fs.readFileSync(path.join(home, 'appearance.json'))), { name: 'Scout <3', color: '#32bc9e', avatar: 'scout' });
     assert.equal(fs.readFileSync(path.join(home, 'kept.txt'), 'utf8'), 'kept');
   } finally { await app.close(); }
+});
+
+test('Auto is per bot, releases waiting Linux actions, persists, and restores prompts when disabled', async () => {
+  const operations = [
+    ['computer_exec', { command: 'printf first' }],
+    ['computer_move', { x: 500, y: 400 }],
+    ['write_file', { path: 'auto-workspace.md', content: 'automatic workspace file' }],
+    ['remember', { content: 'Requires separate approval.' }],
+    ['computer_exec', { command: 'printf last' }],
+  ];
+  const model = await fakeModel(request => {
+    const index = request.messages.filter(m => m.role === 'tool').length;
+    return index < operations.length ? { tool_calls: [{ index: 0, id: 'auto-' + index, type: 'function', function: { name: operations[index][0], arguments: JSON.stringify(operations[index][1]) } }] } : { content: 'Done.' };
+  });
+  const directory = temp(), app = await createServer({ port: 0, dataDir: directory });
+  Object.assign(app.store.state.settings, { baseUrl: model.base, model: 'test-model', vision: true });
+  const executed = []; app.computers.guest = async (...args) => { executed.push(args); return { ok: true }; };
+  const toggle = (botId, enabled) => fetch(app.origin + '/api/bots/auto-approve', { method: 'POST', headers: { 'X-Blots': '1', 'Content-Type': 'application/json' }, body: JSON.stringify({ botId, enabled }) });
+  const chat = { id: crypto.randomUUID(), botId: 'blot', title: 'test', messages: [] }; app.store.state.chats.push(chat);
+  try {
+    assert.equal((await toggle('blot', 'true')).status, 400);
+    const run = app.agent.start(chat.id, 'Use my Linux computer.');
+    await wait(() => run.approval); const firstApproval = run.approval.id;
+    assert.equal(executed.length, 0);
+    assert.equal((await toggle('scout', true)).status, 200);
+    assert.equal(run.approval.id, firstApproval, 'Another bot cannot approve this action');
+    assert.equal((await toggle('blot', true)).status, 200);
+    await wait(() => run.approval?.tool === 'remember');
+    assert.deepEqual(executed.map(args => [args[1], args[2].kind]), [['/exec', undefined], ['/input', 'move']]);
+    assert.equal(createStore(directory).state.bots.find(b => b.id === 'blot').autoApproveLinux, true);
+    assert.equal(fs.readFileSync(path.join(app.store.workspace, 'auto-workspace.md'), 'utf8'), 'automatic workspace file');
+    assert.deepEqual(app.store.state.notes, []);
+    assert.equal((await toggle('blot', false)).status, 200);
+    assert.equal(run.approval.tool, 'remember');
+    app.agent.approve(run.approval.id, false);
+    await wait(() => run.approval?.tool === 'computer_exec');
+    assert.equal(executed.length, 2, 'Disabling Auto must restore the next Linux approval');
+    app.agent.stop(run.id); await wait(() => run.status === 'stopped');
+    assert.equal(executed.length, 2);
+    assert.equal(createStore(directory).state.bots.find(b => b.id === 'blot').autoApproveLinux, false);
+  } finally { await app.close(); await model.close(); }
+});
+
+test('Auto mode respects human takeover and cancellation without executing blocked Linux actions', async () => {
+  const model = await fakeModel(request => request.messages.some(m => m.role === 'tool') ? { content: 'Done.' } : { tool_calls: [{ index: 0, id: 'auto-command', type: 'function', function: { name: 'computer_exec', arguments: '{"command":"printf test"}' } }] });
+  const app = await createServer({ port: 0, dataDir: temp() });
+  Object.assign(app.store.state.settings, { baseUrl: model.base, model: 'test-model' });
+  const executed = []; app.computers.guest = async (...args) => { executed.push(args); return { ok: true }; };
+  const chat = { id: crypto.randomUUID(), botId: 'blot', title: 'test', messages: [] }; app.store.state.chats.push(chat);
+  try {
+    app.agent.setAutoApprove('blot', true);
+    app.computers.takeover('blot', 1, true);
+    const first = app.agent.start(chat.id, 'Use Linux.');
+    await wait(() => first.steps.length); await new Promise(resolve => setTimeout(resolve, 30));
+    assert.equal(first.approval, undefined); assert.equal(executed.length, 0);
+    app.computers.takeover('blot', 1, false); await wait(() => first.status === 'done');
+    assert.equal(executed.length, 1);
+    app.computers.takeover('blot', 1, true);
+    const second = app.agent.start(chat.id, 'Use Linux again.');
+    await wait(() => second.steps.length); app.agent.stop(second.id);
+    await wait(() => second.status === 'stopped');
+    app.computers.takeover('blot', 1, false);
+    assert.equal(executed.length, 1);
+  } finally { await app.close(); await model.close(); }
 });

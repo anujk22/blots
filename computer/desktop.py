@@ -29,6 +29,8 @@ def wallpaper(color):
     file.with_suffix('.tmp').replace(file)
 
 def prepare():
+    from cursor import theme
+    theme(HOME, appearance())
     color = appearance()['color']
     wallpaper(color)
     r, g, b = (round(c * .5 + 127.5) for c in rgb(color))

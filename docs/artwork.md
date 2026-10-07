@@ -17,3 +17,5 @@ The latest user-supplied mascot sheet was edited with the built-in GPT Images to
 Prompt for each: "Extract only the specified character from the supplied sheet; preserve its silhouette, color, smiling face, and friendly rendering. Center one character on a genuinely transparent square canvas, occupying about 78 percent. Remove other characters, card frames, backgrounds, labels, typography, orbiting balls, ground shadows and floor glows. Keep facial features readable at small icon sizes."
 
 The approved flat mark remains the app logo and Mac icon. The three characters are agent profile images.
+
+Linux's native cursor theme adds a soft glow in the agent's color and its portrait above and to the right of the actual hotspot. It retains the system's pointer, hand, text and resize shapes and animated cursor frames. The cursor artwork is composed locally with Cairo from these existing portraits; no extra generated image is used. The live screen and computer screenshots show the same real cursor.

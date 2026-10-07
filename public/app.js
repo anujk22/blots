@@ -28,7 +28,7 @@ function markdown(text) {
 }
 
 let paneShare, paneObserver;
-let toolsEnabled = localStorage.getItem('blots.tools') !== 'false', composerSaving = false, approvalSaving = false;
+let composerSaving = false, approvalSaving = false;
 let state, selectedBot = localStorage.getItem('blots.bot') || 'blot', chatId = localStorage.getItem('blots.chat') || '', view = 'chat', selectedScreen = 1, modelList = [], connectionError = '', rfb, rfbKey = '', screenError = '', full = false, chatOpen = true, pollBusy = false, messagesSignature = '', listsSignature = '', pendingSend = false, toastTimer, filePath = '.', fileContent;
 const isLive = run => ['running', 'waiting', 'queued'].includes(run.status);
 const currentBot = () => state.bots.find(b => b.id === selectedBot) || state.bots[0];
@@ -102,11 +102,10 @@ function renderChat() {
         <div class="control-row" id="control-row"></div>
       </div><div class="activity-panel" id="activity-panel"></div>
     </section>
-    <div class="composer-wrap"><form class="composer" id="composer"><textarea id="prompt" aria-label="Message your bot" placeholder="Message ${esc(bot.name)}…" rows="1"></textarea><div class="composer-bottom"><div class="composer-controls"><button type="button" class="composer-tool" id="tools-toggle" aria-label="Use tools" aria-pressed="${toolsEnabled}" title="${toolsEnabled ? 'Tools on · actions ask for approval' : 'Tools off · chat only'}">${icon('tools')}</button><button type="button" class="composer-tool approval-toggle" id="auto-approve-toggle" aria-label="Auto-approve Linux actions" aria-pressed="false">${icon('auto')}<span>Auto</span></button><label class="composer-select" title="Local model">${icon('model')}<select id="composer-model" aria-label="Model"></select>${icon('down')}</label><label class="composer-select reasoning-select">${icon('reasoning')}<select id="composer-reasoning" aria-label="Reasoning level"></select>${icon('down')}</label></div><button class="send-button" id="send" aria-label="Send message">${icon('send')}</button></div></form><div class="composer-caption">Messages and files stay on this Mac</div></div>
+    <div class="composer-wrap"><form class="composer" id="composer"><textarea id="prompt" aria-label="Message your bot" placeholder="Message ${esc(bot.name)}…" rows="1"></textarea><div class="composer-bottom"><div class="composer-controls"><label class="composer-select approval-select" title="Action approval">${icon('auto')}<select id="approval-mode" aria-label="Action approval"><option value="ask">Ask before computer and workspace actions</option><option value="auto">Auto-approve computer and workspace actions</option></select></label><label class="composer-select" title="Local model">${icon('model')}<select id="composer-model" aria-label="Model"></select></label><label class="composer-select reasoning-select">${icon('reasoning')}<select id="composer-reasoning" aria-label="Reasoning level"></select></label></div><button class="send-button" id="send" aria-label="Send message">${icon('send')}</button></div></form><div class="composer-caption">Messages and files stay on this Mac</div></div>
   </div>`;
   setupPaneResize();
-  $('#tools-toggle').onclick = () => { toolsEnabled = !toolsEnabled; localStorage.setItem('blots.tools', String(toolsEnabled)); updateComposerControls(); };
-  $('#auto-approve-toggle').onclick = () => action(saveAutoApproval);
+  $('#approval-mode').onchange = event => action(() => saveAutoApproval(event.target.value === 'auto'));
   $('#composer-model').onchange = event => action(() => saveComposerSettings({ model: event.target.value }));
   $('#composer-reasoning').onchange = event => action(() => saveComposerSettings({ reasoningEffort: event.target.value }));
   updateComposerControls();
@@ -180,19 +179,19 @@ function updateComposerControls() {
   }
   if (!composerSaving) { $('#composer-model').value = model; $('#composer-reasoning').value = effort; }
   $('#composer-model').disabled = composerSaving || !values.length;
-  $('#composer-model').title = model || 'Connect a local model in Settings';
   $('#composer-reasoning').disabled = composerSaving || !available.length;
   $('.reasoning-select').title = available.length ? 'Reasoning for the next task · Off skips thinking; higher levels may take longer' : 'Reasoning support is unverified for this model; its default is used';
-  $('#tools-toggle').setAttribute('aria-pressed', String(toolsEnabled));
   const auto = currentBot().autoApproveLinux === true;
-  $('#tools-toggle').title = toolsEnabled ? auto ? 'Tools on · Linux actions auto-approved' : 'Tools on · actions ask for approval' : 'Tools off · chat only';
-  $('#auto-approve-toggle').setAttribute('aria-pressed', String(auto));
-  $('#auto-approve-toggle').disabled = approvalSaving || !toolsEnabled;
-  $('#auto-approve-toggle').title = !toolsEnabled ? 'Enable tools to use Auto mode' : auto ? 'Auto on · Linux commands, browser, mouse and keyboard run without prompts. Shared workspace files can change. Click to restore prompts for subsequent actions.' : 'Auto off · Click to auto-approve Linux commands, browser, mouse and keyboard for this bot, including a waiting Linux action. Shared workspace files can change.';
+  $('#approval-mode').value = auto ? 'auto' : 'ask';
+  $('#approval-mode').disabled = approvalSaving;
+  $('.approval-select').dataset.auto = String(auto);
+  $('.approval-select').title = auto ? 'Action approval: Auto · Computer actions and workspace file writes run without prompts' : 'Action approval: Ask · Review computer actions and workspace file writes before they run';
+  $('#composer-model').parentElement.title = $('#composer-model').title = 'Model: ' + modelLabel(model || 'No local model');
+  $('.reasoning-select').title = available.length ? 'Reasoning: ' + reasoningLabels[effort] + ' · Higher levels may take longer' : 'Reasoning: Model default · This model has no verified reasoning control';
   $('#send').disabled = pendingSend || composerSaving;
 }
-async function saveAutoApproval() {
-  const botId = selectedBot, enabled = currentBot().autoApproveLinux !== true;
+async function saveAutoApproval(enabled) {
+  const botId = selectedBot;
   approvalSaving = true; updateComposerControls();
   try { await api('/api/bots/auto-approve', { botId, enabled }); await refresh(); }
   finally { approvalSaving = false; updateComposerControls(); }
@@ -217,7 +216,7 @@ async function sendMessage() {
   pendingSend = true; $('#send').disabled = true;
   try {
     if (!currentChat()) { const chat = await api('/api/chats', { botId: selectedBot }); chatId = chat.id; localStorage.setItem('blots.chat', chatId); }
-    await api('/api/message', { chatId, text, tools: toolsEnabled }); prompt.value = ''; prompt.style.height = ''; setChatOpen(true); await refresh();
+    await api('/api/message', { chatId, text, tools: true }); prompt.value = ''; prompt.style.height = ''; setChatOpen(true); await refresh();
   } finally { pendingSend = false; if ($('#send')) $('#send').disabled = false; }
 }
 function renderMessages() {
