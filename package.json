@@ -1,0 +1,60 @@
+{
+  "name": "blots",
+  "version": "1.0.0",
+  "description": "Your own little team. Local AI, local memory, local work.",
+  "private": true,
+  "main": "src/desktop.cjs",
+  "author": "Anuj",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "dev": "node src/server.cjs",
+    "test": "node --test test/*.test.cjs",
+    "build": "npm run vendor && electron-builder --mac dir --arm64",
+    "vendor": "esbuild public/vendor-entry.js --bundle --format=esm --minify --outfile=public/vendor.js",
+    "computer:build": "docker build -t blots-computer:1.0 computer"
+  },
+  "dependencies": {
+    "@novnc/novnc": "1.7.0",
+    "marked": "17.0.5",
+    "playwright": "1.63.0",
+    "ws": "8.22.0"
+  },
+  "devDependencies": {
+    "electron": "44.6.0",
+    "electron-builder": "26.15.3",
+    "esbuild": "0.27.4"
+  },
+  "build": {
+    "appId": "local.anuj.blots",
+    "productName": "Blots",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**",
+      "public/**",
+      "assets/**",
+      "package.json",
+      "computer/**"
+    ],
+    "asar": true,
+    "npmRebuild": false,
+    "mac": {
+      "target": [
+        {
+          "target": "dir",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.icns",
+      "category": "public.app-category.productivity",
+      "identity": null
+    },
+    "asarUnpack": [
+      "computer/**"
+    ]
+  }
+}
