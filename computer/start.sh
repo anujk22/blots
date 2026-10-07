@@ -7,6 +7,8 @@ from pathlib import Path
 for screen in range(1, 5):
     for name in ('SingletonLock', 'SingletonCookie', 'SingletonSocket'):
         (Path('/home/blots/profiles') / f's{screen}' / name).unlink(missing_ok=True)
+    Path(f'/tmp/.X{screen}-lock').unlink(missing_ok=True)
+    Path(f'/tmp/.X11-unix/X{screen}').unlink(missing_ok=True)
 PY
 export XDG_RUNTIME_DIR=/tmp/blots-runtime
 mkdir -p "$XDG_RUNTIME_DIR"
@@ -26,4 +28,12 @@ for n in 1 2 3 4; do
     --app="http://127.0.0.1:8766/?screen=$n" > /tmp/chrome-$n.log 2>&1 &
   socat TCP-LISTEN:$((9230+n)),fork,reuseaddr TCP:127.0.0.1:$((9220+n)) > /tmp/cdp-$n.log 2>&1 &
 done
-exec python3 /opt/blots/guest.py
+python3 /opt/blots/guest.py &
+cleanup() {
+  trap - TERM INT
+  kill -TERM $(jobs -pr) 2>/dev/null || true
+  wait || true
+  exit 0
+}
+trap cleanup TERM INT
+wait
