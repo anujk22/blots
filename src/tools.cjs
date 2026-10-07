@@ -15,10 +15,10 @@ const definitions = [
   schema('browser_click', 'Click a numbered element from the latest browser read. Requires user approval.', { element: { type: 'integer' } }, ['element']),
   schema('browser_type', 'Fill a numbered input from the latest browser read. Does not press Enter. Requires user approval.', { element: { type: 'integer' }, text: str('Text to enter') }, ['element', 'text']),
   schema('computer_exec', 'Run a bash command on your own Linux computer, never the user’s Mac. Working folder /workspace, 30-second limit. Requires approval.', { command: str('Bash command') }, ['command']),
-  schema('computer_launch', 'Launch a real app on your Linux desktop.', { app: { type: 'string', enum: ['browser', 'files', 'terminal', 'editor'] } }, ['app']),
+  schema('computer_launch', 'Launch a real app on your Linux desktop.', { app: { type: 'string', enum: Object.keys(require('../computer/apps.json')) } }, ['app']),
   schema('computer_screenshot', 'See your real Linux screen as an image. Use to inspect native apps before acting.'),
-  schema('computer_click', 'Click pixel coordinates on the 1280 by 800 desktop shown in your latest screenshot. Requires approval.', { x: { type: 'integer', minimum: 0, maximum: 1279 }, y: { type: 'integer', minimum: 0, maximum: 799 } }, ['x', 'y']),
-  schema('computer_move', 'Move the real mouse pointer across your Linux desktop. Use for hover menus. Requires approval.', { x: { type: 'integer', minimum: 0, maximum: 1279 }, y: { type: 'integer', minimum: 0, maximum: 799 } }, ['x', 'y']),
+  schema('computer_click', 'Click pixel coordinates on the 1280 by 960 desktop shown in your latest screenshot. Requires approval.', { x: { type: 'integer', minimum: 0, maximum: 1279 }, y: { type: 'integer', minimum: 0, maximum: 959 } }, ['x', 'y']),
+  schema('computer_move', 'Move the real mouse pointer across your Linux desktop. Use for hover menus. Requires approval.', { x: { type: 'integer', minimum: 0, maximum: 1279 }, y: { type: 'integer', minimum: 0, maximum: 959 } }, ['x', 'y']),
   schema('computer_scroll', 'Scroll the native app under the mouse pointer. Inspect a screenshot afterwards. Requires approval.', { direction: { type: 'string', enum: ['up', 'down'] } }, ['direction']),
   schema('computer_type', 'Type text into the currently focused native application. Requires approval.', { text: str('Text to type') }, ['text']),
   schema('computer_key', 'Press a key in the focused native application. Requires approval.', { key: { type: 'string', enum: ['Return', 'Tab', 'Escape', 'BackSpace', 'ctrl+l', 'ctrl+a', 'ctrl+c', 'ctrl+v', 'alt+F4', 'Up', 'Down', 'Left', 'Right'] } }, ['key']),
@@ -124,7 +124,7 @@ function createTools(store, computers, handlers = {}) {
   return {
     execute, definitions,
     definitionsFor: vision => definitions.filter(t => vision || !['computer_screenshot', 'computer_click', 'computer_move', 'computer_scroll', 'computer_type', 'computer_key'].includes(t.function.name)),
-    needsApproval: name => ['write_file', 'remember', 'browser_click', 'browser_type', 'computer_exec', 'computer_click', 'computer_move', 'computer_scroll', 'computer_type', 'computer_key', 'schedule_task'].includes(name),
+    needsApproval: (name, autoApproveLinux = false) => ['write_file', 'remember', 'browser_click', 'browser_type', 'computer_exec', 'computer_click', 'computer_move', 'computer_scroll', 'computer_type', 'computer_key', 'schedule_task'].includes(name) && !(autoApproveLinux && /^(browser_|computer_)/.test(name)),
   };
 }
 module.exports = { createTools, definitions };

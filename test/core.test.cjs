@@ -177,3 +177,15 @@ test('pane widths accept fractions, reject invalid bounds and persist independen
     assert.equal(app.store.state.settings.chatShare, .625); assert.equal(app.store.state.settings.model, model);
   } finally { await app.close(); }
 });
+
+test('editing an agent updates its Linux appearance without replacing its files', async () => {
+  const directory = temp(), app = await createServer({ port: 0, dataDir: directory });
+  try {
+    const home = path.join(directory, 'computers', 'scout');
+    fs.mkdirSync(home, { recursive: true }); fs.writeFileSync(path.join(home, 'kept.txt'), 'kept');
+    const response = await fetch(app.origin + '/api/bots', { method: 'POST', headers: { 'X-Blots': '1', 'Content-Type': 'application/json' }, body: JSON.stringify({ ...app.store.state.bots.find(b => b.id === 'scout'), name: 'Scout <3', color: '#32bc9e' }) });
+    assert.equal(response.status, 200);
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(home, 'appearance.json'))), { name: 'Scout <3', color: '#32bc9e', avatar: 'scout' });
+    assert.equal(fs.readFileSync(path.join(home, 'kept.txt'), 'utf8'), 'kept');
+  } finally { await app.close(); }
+});

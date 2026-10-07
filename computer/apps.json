@@ -1,0 +1,18 @@
+{
+  "browser": {"name": "Browser", "icon": "chromium", "command": []},
+  "blender": {"name": "Blender", "icon": "blender", "command": ["blender"]},
+  "draw": {"name": "Draw", "icon": "libreoffice-draw", "command": ["libreoffice", "--draw"]},
+  "freecad": {"name": "FreeCAD", "icon": "freecad", "command": ["freecad"]},
+  "gimp": {"name": "GIMP", "icon": "gimp", "command": ["gimp"]},
+  "files": {"name": "Files", "icon": "folder", "command": ["thunar", "/workspace"]},
+  "godot": {"name": "Godot", "icon": "/usr/share/pixmaps/godot.svg", "command": ["godot3", "--project-manager"]},
+  "inkscape": {"name": "Inkscape", "icon": "org.inkscape.Inkscape", "command": ["inkscape"]},
+  "kdenlive": {"name": "Kdenlive", "icon": "kdenlive", "command": ["kdenlive"]},
+  "kicad": {"name": "KiCad", "icon": "kicad", "command": ["kicad"]},
+  "editor": {"name": "Mousepad", "icon": "accessories-text-editor", "command": ["mousepad", "--disable-server"]},
+  "openscad": {"name": "OpenSCAD", "icon": "openscad", "command": ["openscad"]},
+  "paraview": {"name": "ParaView", "icon": "paraview", "command": ["paraview"]},
+  "qgis": {"name": "QGIS Desktop", "icon": "qgis", "command": ["qgis"]},
+  "solitaire": {"name": "Solitaire", "icon": "gnome-aisleriot", "command": ["/usr/games/sol"]},
+  "terminal": {"name": "Terminal", "icon": "utilities-terminal", "command": ["xfce4-terminal", "--disable-server"]}
+}

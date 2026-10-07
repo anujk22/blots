@@ -4,7 +4,7 @@ The main icon was generated with the built-in GPT Images tool and saved as `publ
 
 Prompt: "A restrained flat 2D blue ink-blot mark for a blue-tinted charcoal local AI workbench. Four softly rounded asymmetric lobes, solid muted cornflower-blue fill, two tiny dark navy eyes, no mouth, no accessories, transparent background. Readable at 24px. No 3D, gloss, highlights, lighting, grain, shadows, gradients, glows, scallops or text."
 
-The Linux start page uses a plain surface and system app icons. The app loads its artwork from local files.
+The Linux desktop follows the supplied computer reference: a colored gradient surround, a real inset Chromium window, a pastel welcome page with line-drawn motifs, a large clock, the current agent portrait, and a native three-app dock. The page pattern is SVG; desktop gradients are generated locally. App icons come from the installed Linux packages. All artwork loads from local files.
 
 ## Agent portraits
 

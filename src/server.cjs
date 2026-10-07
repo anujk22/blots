@@ -100,13 +100,18 @@ async function createServer(options = {}) {
         if (route === '/api/stop' && method === 'POST') { const data = await body(req); return json(res, { stopped: agent.stop(data.runId) }); }
         if (route === '/api/stop-all' && method === 'POST') { for (const runId of agent.active.keys()) agent.stop(runId); return json(res, { ok: true }); }
         if (route === '/api/approve' && method === 'POST') { const data = await body(req); agent.approve(data.id, data.allow === true); return json(res, { ok: true }); }
+        if (route === '/api/bots/auto-approve' && method === 'POST') {
+          const data = await body(req); bot(data.botId);
+          if (typeof data.enabled !== 'boolean') throw new Error('Choose whether to auto-approve Linux actions.');
+          agent.setAutoApprove(data.botId, data.enabled); return json(res, { ok: true });
+        }
         if (route === '/api/bots' && method === 'POST') {
           const data = await body(req);
           if (!data.id && store.state.bots.length >= 12) throw new Error('You can keep up to 12 bots.');
           const b = data.id ? bot(data.id) : { id: id() };
           b.name = text(data.name, 'Name', 40); b.role = text(data.role, 'Role', 100); b.instructions = text(data.instructions, 'Instructions', 6000);
           b.color = /^#[0-9a-f]{6}$/i.test(data.color) ? data.color : '#2155ee';
-          if (!data.id) store.state.bots.push(b); store.save(); return json(res, b);
+          if (!data.id) store.state.bots.push(b); store.save(); computers.appearance(b.id); return json(res, b);
         }
         if (route === '/api/notes' && method === 'POST') { const data = await body(req); const note = { id: id(), content: text(data.content, 'Memory', 4000), createdAt: now() }; store.state.notes.unshift(note); store.save(); return json(res, note); }
         if (route === '/api/notes/delete' && method === 'POST') { const data = await body(req); store.state.notes = store.state.notes.filter(n => n.id !== data.id); store.save(); return json(res, { ok: true }); }

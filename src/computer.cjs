@@ -16,13 +16,21 @@ function createComputers(store) {
   const runDocker = (args, timeout = 30000) => exec(dockerPath(), args, { timeout, maxBuffer: 4 * 1024 * 1024 });
   const namespace = createHash('sha256').update(store.dataDir).digest('hex').slice(0, 8);
   const name = botId => `blots-${namespace}-${botId}`;
+  function appearance(botId) {
+    const bot = store.state.bots.find(b => b.id === botId);
+    if (!bot) throw new Error('Bot not found.');
+    const home = path.join(store.dataDir, 'computers', botId);
+    fs.mkdirSync(home, { recursive: true });
+    const file = path.join(home, 'appearance.json');
+    fs.writeFileSync(file + '.tmp', JSON.stringify({ name: bot.name, color: bot.color, avatar: ['blot', 'scout', 'quill'].includes(bot.id) ? bot.id : null }));
+    fs.renameSync(file + '.tmp', file);
+  }
   async function ensure(botId) {
     if (starting.has(botId)) return starting.get(botId);
     if (computers.has(botId)) return computers.get(botId);
     if (computers.size + starting.size >= 3) throw new Error('Three computers are already open. Stop one before starting another to leave room for your local model.');
     const job = (async () => {
-      const bot = store.state.bots.find(b => b.id === botId);
-      if (!bot) throw new Error('Bot not found.');
+      appearance(botId);
       try { await runDocker(['info', '--format', '{{.ServerVersion}}'], 10000); }
       catch { throw new Error('Open Docker Desktop, wait for it to start, then start this computer.'); }
       try { await runDocker(['image', 'inspect', IMAGE]); }
@@ -38,8 +46,7 @@ function createComputers(store) {
       }
       if (!container) {
         const home = path.join(store.dataDir, 'computers', botId);
-        fs.mkdirSync(home, { recursive: true });
-        const args = ['run', '-d', '--name', name(botId), '--label', 'app=blots', '--memory', '2g', '--cpus', '2', '--shm-size', '512m', '--security-opt', 'no-new-privileges', '-e', `BLOT_NAME=${bot.name}`, '-e', `TZ=${Intl.DateTimeFormat().resolvedOptions().timeZone}`, '-v', `${home}:/home/blots`, '-v', `${store.workspace}:/workspace`];
+        const args = ['run', '-d', '--name', name(botId), '--label', 'app=blots', '--memory', '2g', '--cpus', '2', '--shm-size', '512m', '--security-opt', 'no-new-privileges', '-e', `TZ=${Intl.DateTimeFormat().resolvedOptions().timeZone}`, '-v', `${home}:/home/blots`, '-v', `${store.workspace}:/workspace`];
         for (const port of [8766, 5901, 5902, 5903, 5904, 9231, 9232, 9233, 9234]) args.push('-p', `127.0.0.1::${port}`);
         args.push(IMAGE); await runDocker(args);
         container = JSON.parse((await runDocker(['inspect', name(botId)])).stdout)[0];
@@ -109,7 +116,7 @@ function createComputers(store) {
     computers.delete(botId);
     for (let screen = 1; screen <= 4; screen++) takeover(botId, screen, false);
   }
-  return { ensure, guest, page, takeover, waitForControl, controls, stop,
+  return { ensure, guest, page, takeover, waitForControl, controls, stop, appearance,
     status: () => [...computers.keys()].map(botId => ({ botId, status: 'ready', controlled: [1, 2, 3, 4].filter(n => controls.has(`${botId}:${n}`)) })),
     starting: () => [...starting.keys()],
     build: async onOutput => {

@@ -1,6 +1,6 @@
 # Blots
 
-**Your own little team.** A slate-blue charcoal local AI desktop app, built for Apple silicon Macs. Each bot has its own persistent Linux computer. The agent conversation is the main reading area, with a live Linux computer beside it. Extra desktops are available in the compact screen picker. Drag the divider to resize the computer pane, use arrow keys when the divider is focused, or double-click it to reset the split. Pane width is saved locally between launches. Expand the computer to watch more closely or take over its mouse and keyboard.
+**Your own little team.** A charcoal local AI desktop app with blue accents, built for Apple silicon Macs. Each bot has its own persistent Linux computer. The agent conversation is the main reading area, with a live Linux computer beside it. Extra desktops are available in the compact screen picker. Drag the divider to resize the computer pane, use arrow keys when the divider is focused, or double-click it to reset the split. Pane width is saved locally between launches. Expand the computer to watch more closely or take over its mouse and keyboard.
 
 Blots is independently built software, not a fork of Bops. There is no Blots account, inference subscription, telemetry, or hosted backend. Inference and app data stay on your Mac. Web research connects to the websites you ask your bots to visit.
 
@@ -55,7 +55,7 @@ The desktop is built locally and unsigned for distribution; it is not a notarize
 - Multiple named bots with editable roles, instructions, and colors. Bots can delegate tasks to teammates; delegated tasks appear in their own conversations and use the same local inference queue.
 - Persistent conversations with streamed local model responses.
 - Live web search, real browser navigation, page reading, and numbered browser actions. Research bots can open sources and cite URLs; no paid search API is needed.
-- A real Linux computer per bot: Chromium, terminal, file manager, and text editor. Four independent desktops available through a compact picker, persistent browser profiles, and persistent home directories.
+- A real 1280 × 960 Linux computer per bot, with an inset Chromium browser, an agent-colored welcome screen, clock, portrait, patterned background, and a native browser/terminal/files dock. The five-column app grid launches installed tools including Blender, Draw, FreeCAD, GIMP, Godot, Inkscape, Kdenlive, KiCad, Mousepad, OpenSCAD, ParaView, QGIS, and Solitaire. Four independent desktops are available through a compact picker, with persistent browser profiles and home directories.
 - Live VNC viewing, expansion, and mouse/keyboard takeover, with a wider conversation pane and the composer below the conversation. Agent tools wait while you have control of their screen.
 - Local workspace listing, reading, file creation/editing, and downloads. File writes, saved memories, browser clicks/typing, and Linux commands come to you for review.
 - Durable local memory shared among bots, managed by you.
@@ -66,7 +66,7 @@ The desktop is built locally and unsigned for distribution; it is not a notarize
 
 ## Tuned for Apple silicon
 
-The Mac app and Linux image run natively on ARM64. Models run in your existing local server, not in Docker. Blots queues inference one task at a time to avoid loading multiple model contexts simultaneously. Each desktop is limited to 2 CPUs and 2 GB RAM; at most three run at once. Four-screen desktops measured about 1.0 GB each at idle on the development M5 Pro Mac. Computers start on demand and stop when Blots quits; their data persists.
+The Mac app and Linux image run natively on ARM64. Models run in your existing local server, not in Docker. Blots queues inference one task at a time to avoid loading multiple model contexts simultaneously. Each desktop is limited to 2 CPUs and 2 GB RAM; at most three run at once. The updated four-screen desktop measured about 1.2 GB at idle on the development M5 Pro Mac. Computers start on demand and stop when Blots quits; their data persists.
 
 Conversation context is bounded to the most recent 24 messages and 60,000 characters. Tool results are bounded, reply length is configurable, and tasks have a configurable step limit. This avoids uncontrolled context growth; it also means very long conversations do not all fit in a single prompt. Shared memory preserves the facts you choose to save.
 

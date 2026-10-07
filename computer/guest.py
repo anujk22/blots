@@ -1,4 +1,10 @@
 import json, os, subprocess, tempfile, time
+import mimetypes
+from pathlib import Path
+import gi
+gi.require_version('Gtk', '3.0')
+from gi.repository import Gtk
+from desktop import appearance, APPS
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
@@ -24,12 +30,27 @@ class Handler(BaseHTTPRequestHandler):
         if u.path == '/':
             with open('/opt/blots/home.html', 'rb') as f:
                 return self.reply(f.read(), kind='text/html; charset=utf-8')
-        icons = {'/icons/browser.png': '/usr/share/icons/hicolor/48x48/apps/chromium.png', '/icons/files.png': 'places/folder.png', '/icons/terminal.png': 'legacy/utilities-terminal.png', '/icons/editor.png': 'legacy/accessories-text-editor.png'}
-        if u.path in icons:
-            with open(icons[u.path] if icons[u.path].startswith('/') else '/usr/share/icons/Adwaita/48x48/'+icons[u.path], 'rb') as f:
-                return self.reply(f.read(), kind='image/png')
+        if u.path == '/appearance':
+            return self.reply(dict(**appearance(), apps=[dict(id=key, name=value['name']) for key, value in APPS.items() if key != 'terminal']))
+        if u.path == '/avatar.png':
+            avatar = appearance()['avatar']
+            if avatar in ('blot', 'scout', 'quill'):
+                return self.reply(Path(f'/opt/blots/avatars/{avatar}.png').read_bytes(), kind='image/png')
+            return self.reply({'error': 'No portrait'}, 404)
+        if u.path.startswith('/icons/'):
+            key = u.path.removeprefix('/icons/').removesuffix('.png')
+            if key in APPS:
+                file = Path(APPS[key]['icon'])
+                if not file.is_absolute():
+                    theme = Gtk.IconTheme.new()
+                    theme.set_custom_theme('Adwaita')
+                    icon = theme.lookup_icon(APPS[key]['icon'], 48, 0)
+                    file = Path(icon.get_filename()) if icon else None
+                if file:
+                    return self.reply(file.read_bytes(), kind=mimetypes.guess_type(file)[0] or 'image/png')
+            return self.reply({'error': 'Icon not found'}, 404)
         if u.path == '/health':
-            return self.reply({'ready': True, 'name': os.environ.get('BLOT_NAME', 'Blot')})
+            return self.reply({'ready': True, 'name': appearance()['name']})
         if u.path == '/screenshot':
             fd, filename = tempfile.mkstemp(suffix='.png'); os.close(fd)
             try:
@@ -53,10 +74,16 @@ class Handler(BaseHTTPRequestHandler):
                 raise ValueError('Invalid screen')
             env = dict(os.environ, DISPLAY=':'+screen)
             if self.path == '/launch':
-                commands = {'terminal': ['xfce4-terminal', '--disable-server'], 'files': ['thunar', '/workspace'], 'editor': ['mousepad', '--disable-server'], 'browser': ['chromium', '--no-sandbox', '--test-type', '--force-dark-mode', '--no-first-run', '--password-store=basic', '--user-data-dir=/home/blots/profiles/s'+screen, '--new-window', 'about:blank']}
-                command = commands.get(data.get('app'))
-                if not command:
+                app = APPS.get(data.get('app'))
+                if not app:
                     raise ValueError('Unknown application')
+                command = app['command']
+                if data['app'] == 'browser':
+                    windows = subprocess.run(['xdotool', 'search', '--class', 'chromium'], env=env, capture_output=True, text=True).stdout.splitlines()
+                    if windows:
+                        subprocess.run(['xdotool', 'windowactivate', windows[-1]], env=env, check=True, capture_output=True)
+                        return self.reply({'launched': 'browser'})
+                    command = ['chromium', '--no-sandbox', '--test-type', '--no-first-run', '--password-store=basic', '--user-data-dir=/home/blots/profiles/s'+screen, '--new-window', 'http://127.0.0.1:8766/?screen='+screen]
                 subprocess.Popen(command, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 return self.reply({'launched': data['app']})
             if self.path == '/exec':
@@ -76,7 +103,7 @@ class Handler(BaseHTTPRequestHandler):
                 kind = data.get('kind')
                 if kind in ['click', 'move']:
                     x, y = int(data['x']), int(data['y'])
-                    if not (0 <= x < 1280 and 0 <= y < 800):
+                    if not (0 <= x < 1280 and 0 <= y < 960):
                         raise ValueError('Click outside the screen')
                     position = subprocess.run(['xdotool', 'getmouselocation', '--shell'], env=env, check=True, capture_output=True, text=True).stdout
                     start = dict(line.split('=', 1) for line in position.splitlines())

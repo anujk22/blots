@@ -17,6 +17,15 @@ function createAgent(store, tools) {
     if (!pending) throw new Error('This action is no longer waiting for approval.');
     approvals.delete(approvalId); pending.resolve(allow);
   }
+  function setAutoApprove(botId, enabled) {
+    const bot = store.state.bots.find(b => b.id === botId);
+    if (!bot) throw new Error('Bot not found.');
+    bot.autoApproveLinux = enabled; store.save();
+    if (enabled) for (const [approvalId, pending] of approvals) {
+      const run = store.state.runs.find(r => r.id === pending.runId);
+      if (run?.botId === botId && run.approval && !tools.needsApproval(run.approval.tool, true)) approve(approvalId, true);
+    }
+  }
   async function permission(run, tool, args) {
     const approvalId = id();
     run.status = 'waiting'; run.approval = { id: approvalId, tool, args };
@@ -88,7 +97,7 @@ function createAgent(store, tools) {
               const args = JSON.parse(call.function.arguments || '{}'); step.args = args;
               if (!availableTools.some(t => t.function.name === name)) throw new Error('The model requested an unavailable tool.');
               run.activity = name.replaceAll('_', ' '); store.save();
-              if (tools.needsApproval(name) && !(await permission(run, name, args))) {
+              if (tools.needsApproval(name, bot.autoApproveLinux === true) && !(await permission(run, name, args))) {
                 result = 'The user declined this action. Do not retry it or work around the denial.'; step.status = 'denied';
               } else {
                 if (controller.signal.aborted) throw new Error('Stopped');
@@ -96,7 +105,7 @@ function createAgent(store, tools) {
               }
             } catch (error) { result = `Tool error: ${error.message}`; step.status = 'failed'; }
             const image = result?.image;
-            const output = image ? 'Screenshot of the real desktop attached below (1280 by 800 pixels).' : typeof result === 'string' ? result : JSON.stringify(result);
+            const output = image ? 'Screenshot of the real desktop attached below (1280 by 960 pixels).' : typeof result === 'string' ? result : JSON.stringify(result);
             step.result = output.slice(0, 2000); store.save();
             messages.push({ role: 'tool', tool_call_id: call.id, content: output.slice(0, 20000) });
             if (image) screenshots.push({ type: 'image_url', image_url: { url: image } });
@@ -117,6 +126,6 @@ function createAgent(store, tools) {
     queue = job.promise;
     return run;
   }
-  return { start, stop, approve, active, shutdown: async () => { for (const key of active.keys()) stop(key); await Promise.allSettled([...active.values()].map(j => j.promise)); } };
+  return { start, stop, approve, setAutoApprove, active, shutdown: async () => { for (const key of active.keys()) stop(key); await Promise.allSettled([...active.values()].map(j => j.promise)); } };
 }
 module.exports = { createAgent };
