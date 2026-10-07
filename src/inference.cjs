@@ -79,4 +79,18 @@ async function complete(settings, messages, tools, signal, onDelta) {
   return { role: 'assistant', content: content || null, ...(reasoning ? { reasoning_content: reasoning } : {}), ...(calls.size ? { tool_calls: [...calls.values()] } : {}), usage, finishReason };
 }
 
-module.exports = { localBase, models, complete, reasoningOptions };
+async function unloadModels(settings, modelIds) {
+  const requested = [...new Set(modelIds.filter(Boolean))];
+  if (!requested.length) return;
+  const base = localBase(settings.baseUrl);
+  const headers = { 'Content-Type': 'application/json', ...(settings.apiKey ? { Authorization: `Bearer ${settings.apiKey}` } : {}) };
+  const metadata = await fetch(base + '/models', { headers, redirect: 'error', signal: AbortSignal.timeout(8000) });
+  if (!metadata.ok) throw new Error(`Could not check model cleanup support (${metadata.status}).`);
+  if (!(await metadata.json()).capabilities?.unload_model) return;
+  const response = await fetch(base + '/unload-model', { method: 'POST', headers, redirect: 'error', body: JSON.stringify({ models: requested }), signal: AbortSignal.timeout(60000) });
+  const data = await response.json();
+  if (!response.ok || data.unloaded !== true) throw new Error(data.error?.message || 'The local model could not be unloaded.');
+}
+
+
+module.exports = { localBase, models, complete, reasoningOptions, unloadModels };

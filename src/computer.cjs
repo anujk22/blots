@@ -11,10 +11,11 @@ const dockerPath = () => ['/usr/local/bin/docker', '/opt/homebrew/bin/docker'].f
 function createComputers(store) {
   const computers = new Map();
   const starting = new Map();
+  const stopping = new Set();
   const controls = new Set();
   const waiters = new Map();
   const runDocker = (args, timeout = 30000) => exec(dockerPath(), args, { timeout, maxBuffer: 4 * 1024 * 1024 });
-  let runtimeStarting;
+  let runtimeStarting, runtimeUsed = false, closing = false;
   async function ensureRuntime() {
     if (!runtimeStarting) runtimeStarting = (async () => {
       try { await runDocker(['info', '--format', '{{.ServerVersion}}'], 10000); return; }
@@ -28,7 +29,7 @@ function createComputers(store) {
         throw new Error('Docker could not start in the background. Open Docker Desktop to check whether it needs attention, then try again.');
       }
     })().finally(() => { runtimeStarting = null; });
-    return runtimeStarting;
+    await runtimeStarting; runtimeUsed = true;
   }
   const namespace = createHash('sha256').update(store.dataDir).digest('hex').slice(0, 8);
   const name = botId => `blots-${namespace}-${botId}`;
@@ -42,6 +43,7 @@ function createComputers(store) {
     fs.renameSync(file + '.tmp', file);
   }
   async function ensure(botId) {
+    if (closing || stopping.has(botId)) throw new Error('The computer is closing.');
     if (starting.has(botId)) return starting.get(botId);
     if (computers.has(botId)) return computers.get(botId);
     if (computers.size + starting.size >= 3) throw new Error('Three computers are already open. Stop one before starting another to leave room for your local model.');
@@ -148,9 +150,13 @@ function createComputers(store) {
     });
   }
   async function stop(botId) {
-    await runDocker(['stop', '--time', '3', name(botId)]);
-    computers.delete(botId);
-    for (let screen = 1; screen <= 4; screen++) takeover(botId, screen, false);
+    stopping.add(botId);
+    try {
+      await starting.get(botId)?.catch(() => {});
+      await runDocker(['stop', '--time', '10', name(botId)]);
+      computers.delete(botId);
+      for (let screen = 1; screen <= 4; screen++) takeover(botId, screen, false);
+    } finally { stopping.delete(botId); }
   }
   return { ensure, ensureScreen, guest, page, takeover, waitForControl, controls, stop, appearance,
     status: () => [...computers.keys()].map(botId => ({ botId, status: 'ready', controlled: [1, 2, 3, 4].filter(n => controls.has(`${botId}:${n}`)) })),
@@ -167,7 +173,23 @@ function createComputers(store) {
         proc.on('error', reject); proc.on('exit', code => code === 0 ? resolve() : reject(new Error(`Computer build failed (${code}). ${log.slice(-1200)}`)));
       });
     },
-    close: async () => { await Promise.allSettled([...starting.values()]); await Promise.allSettled([...computers.keys()].map(stop)); },
+    close: async () => {
+      closing = true;
+      await Promise.allSettled([...starting.values()]);
+      await Promise.allSettled([...computers.values()].flatMap(c => [...c.startingScreens.values()]));
+      let running;
+      try { running = (await runDocker(['ps', '--filter', 'label=app=blots', '--filter', `name=^/blots-${namespace}-`, '--format', '{{.Names}}'], 10000)).stdout.trim().split('\n').filter(Boolean); }
+      catch (error) { if (computers.size) throw error; return; }
+      if (running.length) runtimeUsed = true;
+      const bots = new Set([...computers.keys(), ...running.map(value => value.slice(`blots-${namespace}-`.length))]);
+      const stopped = await Promise.allSettled([...bots].map(stop));
+      const errors = stopped.filter(r => r.status === 'rejected').map(r => r.reason.message);
+      if (errors.length) throw new Error(errors.join('\n'));
+    },
+    stopRuntime: async () => {
+      if (!runtimeUsed || process.platform !== 'darwin' || !fs.existsSync('/Applications/Docker.app')) return;
+      if (!(await runDocker(['ps', '-q'], 10000)).stdout.trim()) { await runDocker(['desktop', 'stop', '--timeout', '30'], 45000); runtimeUsed = false; }
+    },
   };
 }
 module.exports = { createComputers, IMAGE };

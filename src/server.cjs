@@ -6,7 +6,7 @@ const os = require('node:os');
 const { WebSocketServer, createWebSocketStream } = require('ws');
 const { createHash } = require('node:crypto');
 const { createStore, workspacePath, id, now } = require('./store.cjs');
-const { localBase, models, reasoningOptions } = require('./inference.cjs');
+const { localBase, models, reasoningOptions, unloadModels } = require('./inference.cjs');
 const { createComputers } = require('./computer.cjs');
 const { createTools } = require('./tools.cjs');
 const { createAgent } = require('./agent.cjs');
@@ -27,7 +27,7 @@ async function createServer(options = {}) {
   });
   const agent = createAgent(store, tools);
   const publicDir = path.join(__dirname, '..', 'public');
-  let buildState = { status: 'idle', log: '' }, origin;
+  let buildState = { status: 'idle', log: '' }, origin, closing = false, closePromise;
   const json = (res, data, status = 200) => { res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(data)); };
   const body = async req => {
     let text = '';
@@ -60,6 +60,7 @@ async function createServer(options = {}) {
       if (req.headers.origin && req.headers.origin !== origin) return json(res, { error: 'Requests must come from Blots.' }, 403);
       const url = new URL(req.url, origin), route = url.pathname;
       const method = req.method;
+      if (closing && route !== '/api/state') return json(res, { error: 'Blots is closing.' }, 503);
       res.setHeader('X-Content-Type-Options', 'nosniff');
       res.setHeader('Referrer-Policy', 'no-referrer');
       res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' ws://127.0.0.1:*; font-src 'self'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'self'");
@@ -160,7 +161,7 @@ async function createServer(options = {}) {
           if (!Number.isInteger(screen) || screen < 1 || screen > 4) throw new Error('Choose a screen from 1 to 4.');
           if (route === '/api/computer/control' && method === 'POST') { computers.takeover(data.botId, screen, data.on === true); return json(res, { ok: true }); }
           if (route === '/api/computer/stop' && method === 'POST') {
-            if (store.state.runs.some(r => r.botId === data.botId && ['queued', 'running', 'waiting'].includes(r.status))) throw new Error('Stop this bot’s task before stopping its computer.');
+            await agent.stopBot(data.botId);
             await computers.stop(data.botId); return json(res, { ok: true });
           }
           if (route === '/api/computer/screenshot' && method === 'GET') {
@@ -190,13 +191,14 @@ async function createServer(options = {}) {
   });
   const wss = new WebSocketServer({ noServer: true, maxPayload: 2 * 1024 * 1024 });
   server.on('upgrade', async (req, socket, head) => {
-    if (req.headers.origin !== origin || req.headers.host !== new URL(origin).host) return socket.destroy();
+    if (closing || req.headers.origin !== origin || req.headers.host !== new URL(origin).host) return socket.destroy();
     const url = new URL(req.url, origin);
     if (url.pathname !== '/vnc') return socket.destroy();
     const botId = url.searchParams.get('bot'), screen = Number(url.searchParams.get('screen'));
-    if (!store.state.bots.some(b => b.id === botId) || ![1, 2, 3, 4].includes(screen)) return socket.destroy();
+    if (!store.state.bots.some(b => b.id === botId) || ![1, 2, 3, 4].includes(screen) || !computers.status().some(c => c.botId === botId)) return socket.destroy();
     try {
       const computer = await computers.ensureScreen(botId, screen);
+      if (closing) return socket.destroy();
       wss.handleUpgrade(req, socket, head, ws => {
         const tcp = net.connect(computer.ports[5900 + screen], '127.0.0.1');
         const stream = createWebSocketStream(ws);
@@ -212,11 +214,21 @@ async function createServer(options = {}) {
       try { runRoutine(r); } catch (error) { r.lastError = error.message; r.nextRunAt = new Date(Date.now() + r.intervalMinutes * 60000).toISOString(); store.save(); }
     }
   }, 15000);
-  let closed = false;
-  return { origin, store, agent, computers, server, close: async () => {
-    if (closed) return; closed = true; clearInterval(scheduler); await agent.shutdown();
-    for (const client of wss.clients) client.close(); wss.close(); await computers.close();
-    server.closeAllConnections(); await new Promise(resolve => server.close(resolve));
+  return { origin, store, agent, computers, server, close: (options = {}) => {
+    if (!closePromise) closePromise = (async () => {
+      closing = true; clearInterval(scheduler); await agent.shutdown(); await computers.close();
+      if (options.releaseResources) {
+        const released = await Promise.allSettled([
+          unloadModels(store.state.settings, [store.state.settings.model, ...store.state.runs.map(r => r.model)]),
+          computers.stopRuntime(),
+        ]);
+        const errors = released.filter(r => r.status === 'rejected').map(r => r.reason.message);
+        if (errors.length) throw new Error(errors.join('\n'));
+      }
+      for (const client of wss.clients) client.close(); wss.close();
+      server.closeAllConnections(); if (server.listening) await new Promise(resolve => server.close(resolve));
+    })().catch(error => { closePromise = null; throw error; });
+    return closePromise;
   } };
 }
 if (require.main === module) createServer().then(app => {

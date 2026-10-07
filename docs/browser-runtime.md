@@ -2,6 +2,12 @@
 
 Blots now starts Docker Desktop quietly on demand on macOS. Starting the app or asking a text-only question does not start Docker. Starting a Linux desktop or building its image checks for the runtime; if Docker is stopped, Blots launches it hidden and in the background, waits for readiness, and then starts the requested computer. Concurrent desktop starts share that startup attempt. Docker remains an installed background dependency, and first-run setup, updates, or other required confirmations can still need attention.
 
+The small **Close computer** button beside Expand stops that bot's current task and Linux computer. Its files remain available for the next start. A normal native-app quit waits for active tasks and all computers belonging to this Blots installation, including running computers left from an earlier session. Viewer reconnects cannot restart a closed computer. Docker Desktop's VM also stops when Blots used it and no other containers are running; unrelated Docker workloads keep it alive.
+
+Native quit requests model unloading when the local server advertises `capabilities.unload_model`. The development Mac's Splash gateway implements `/v1/unload-model`: it releases the resident Splash process used by Blots, waits for other active gateway requests, and leaves its lightweight gateway available for the next launch. Other providers without this capability manage their own model lifetime. Cleanup failures keep quit pending and display an error so they can be resolved and retried. Force Quit, crashes, and power loss cannot run this graceful cleanup.
+
+The installed Mac app was verified on October 7, 2026 with three running Linux computers and a loaded Splash 35B model. All three computers exited with code 0, including one started outside the app's tracked session; the model process exited and Docker's VM stopped. Seven shutdown regression tests cover cancellation, repeated Quit, cleanup retry, model unloading and stale viewer reconnects.
+
 ## Desktop resources
 
 Settings has CPU and memory sliders. Each computer defaults to **one CPU core and 1 GiB RAM**, with ranges of 1–4 cores and 1–4 GiB in half-GiB memory increments. Save desktop limits, then stop and start a computer to apply them. Existing computers update their limits without deleting their home directory, browser profiles, or workspace. A limit is a ceiling, not guaranteed use or a reserved share. Complex pages or several extra screens can need a higher limit; use 1.5–2 GiB if Chromium becomes unstable.

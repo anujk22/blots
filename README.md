@@ -27,7 +27,7 @@ brew install incoai/tap/splash
 splash serve --model audreyt/Qwen3.8-27B-Splash-abliterated
 ```
 
-Select that model in Blots Settings and enable visual desktop tools. The model is about 17.4 GB to download; the model card specifies Apple M3 or newer and at least 36 GB unified memory. Model quality can be weaker than the original, so the original remains available on the development Mac. Its existing local gateway selects the requested Splash model and coordinates Splash/Sushi so only one model is resident, with idle offload after five minutes. A fresh machine can use the direct command above instead.
+Select that model in Blots Settings and enable visual desktop tools. The model is about 17.4 GB to download; the model card specifies Apple M3 or newer and at least 36 GB unified memory. Model quality can be weaker than the original, so the original remains available on the development Mac. Its existing local gateway selects the requested Splash model and coordinates Splash/Sushi so only one model is resident, with idle offload after five minutes and explicit unloading on a normal Blots app quit. A fresh machine can use the direct command above instead.
 
 ## Build from source
 

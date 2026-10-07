@@ -3,7 +3,7 @@ const path = require('node:path');
 const { createServer } = require('./server.cjs');
 app.setName('Blots');
 app.commandLine.appendSwitch('disk-cache-size', '33554432');
-let backend, window, quitting = false;
+let backend, window, quitting = false, cleanedUp = false;
 const lock = app.requestSingleInstanceLock();
 if (!lock) app.quit();
 else {
@@ -28,7 +28,12 @@ else {
   }).catch(error => { dialog.showErrorBox('Blots couldn’t start', error.message); app.quit(); });
   app.on('window-all-closed', () => app.quit());
   app.on('before-quit', event => {
-    if (!backend || quitting) return;
-    event.preventDefault(); quitting = true; backend.close().finally(() => app.quit());
+    if (!backend || cleanedUp) return;
+    event.preventDefault();
+    if (quitting) return;
+    quitting = true;
+    backend.close({ releaseResources: true }).then(() => { cleanedUp = true; app.quit(); }).catch(error => {
+      quitting = false; dialog.showErrorBox('Blots couldn’t finish cleanup', error.message + '\nTry quitting again after resolving this issue.');
+    });
   });
 }

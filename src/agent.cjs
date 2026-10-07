@@ -188,6 +188,11 @@ function createAgent(store, tools) {
     if (!run || !['paused', 'failed', 'stopped'].includes(run.status)) throw new Error('Choose a paused or interrupted task.');
     return start(run.chatId, run.goal || run.title, true, run);
   }
-  return { start, resume, stop, approve, setAutoApprove, active, forget: checkpoints.remove, shutdown: async () => { for (const key of active.keys()) stop(key); await Promise.allSettled([...active.values()].map(j => j.promise)); } };
+  async function stopBot(botId) {
+    const jobs = [...active.entries()].filter(([runId]) => store.state.runs.find(r => r.id === runId)?.botId === botId);
+    for (const [runId] of jobs) stop(runId);
+    await Promise.allSettled(jobs.map(([, job]) => job.promise));
+  }
+  return { start, resume, stop, stopBot, approve, setAutoApprove, active, forget: checkpoints.remove, shutdown: async () => { for (const key of active.keys()) stop(key); await Promise.allSettled([...active.values()].map(j => j.promise)); } };
 }
 module.exports = { createAgent };

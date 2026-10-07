@@ -101,7 +101,7 @@ function renderChat() {
     <div class="pane-divider" id="pane-divider" role="separator" aria-label="Resize computer pane" aria-orientation="vertical" aria-controls="computer-pane" tabindex="0" title="Drag to resize · Double-click to reset"></div>
     <section class="computer-pane" id="computer-pane">
       <div class="computer-top"><div class="computer-title">${icon('monitor')}<span>${esc(bot.name)}’s computer</span></div>
-        <div class="tab-row"><select id="screen-select" aria-label="Computer screen">${[1, 2, 3, 4].map(n => `<option value="${n}" ${n === selectedScreen ? 'selected' : ''}>Desktop ${n}</option>`).join('')}</select><button id="toggle-chat" aria-label="Toggle conversation" title="Toggle conversation" aria-expanded="${chatOpen}" aria-controls="chat-pane">${icon('chat')}</button><button id="computer-tab" class="selected">Computer</button><button id="activity-tab">Activity</button><button class="icon-button" id="expand-computer" title="Expand computer" aria-label="Expand computer">${icon('expand')}</button></div>
+        <div class="tab-row"><select id="screen-select" aria-label="Computer screen">${[1, 2, 3, 4].map(n => `<option value="${n}" ${n === selectedScreen ? 'selected' : ''}>Desktop ${n}</option>`).join('')}</select><button id="toggle-chat" aria-label="Toggle conversation" title="Toggle conversation" aria-expanded="${chatOpen}" aria-controls="chat-pane">${icon('chat')}</button><button id="computer-tab" class="selected">Computer</button><button id="activity-tab">Activity</button><button class="icon-button" id="expand-computer" title="Expand computer" aria-label="Expand computer">${icon('expand')}</button><button class="icon-button" id="close-computer" title="Close computer · stops this bot’s task" aria-label="Close computer">${icon('close')}</button></div>
       </div>
       <div class="computer-work" id="computer-work">
         <form class="address-bar" id="address-bar" hidden><input id="address" aria-label="Search or enter an address" placeholder="Search the web or enter an address"><button class="button small" title="Go">${icon('arrow')}</button></form>
@@ -117,6 +117,7 @@ function renderChat() {
   $('#composer-reasoning').onchange = event => action(() => saveComposerSettings({ reasoningEffort: event.target.value }));
   updateComposerControls();
   $('#toggle-chat').onclick = () => setChatOpen(!chatOpen);
+  $('#close-computer').onclick = () => action(async () => { const button = $('#close-computer'); button.dataset.closing = 'true'; button.disabled = true; destroyScreen(); try { await api('/api/computer/stop', { botId: selectedBot }); screenError = ''; await refresh(); } finally { delete button.dataset.closing; if (button.isConnected) updateComputer(); } });
   $('#close-chat').onclick = () => setChatOpen(false);
   $('#screen-select').onchange = event => { selectedScreen = Number(event.target.value); destroyScreen(); controlSignature = ''; updateComputer(); };
   $('#composer').onsubmit = event => { event.preventDefault(); action(sendMessage); };
@@ -252,6 +253,9 @@ function updateComputer() {
   if (!$('#screen-host')) return;
   if (document.hidden || $('#activity-panel').classList.contains('visible')) { destroyScreen(); return; }
   const computer = currentComputer(), starting = state.startingComputers.includes(selectedBot), bot = currentBot();
+  const closingComputer = $('#close-computer').dataset.closing === 'true';
+  $('#close-computer').disabled = closingComputer || (!computer && !starting);
+  if (closingComputer) { destroyScreen(); return; }
   const run = state.runs.find(r => r.botId === selectedBot && isLive(r));
   const step = run?.steps.at(-1);
   const activity = run ? run.approval ? 'Waiting for your approval' : step?.status === 'running' ? `${humanTool(step.tool)} · Desktop ${step.args?.screen ?? 1}` : run.status === 'queued' ? 'Waiting for the model' : 'Thinking…' : '';
@@ -274,9 +278,8 @@ function updateComputer() {
   const signature = `${!!computer}:${isControl()}:${selectedScreen}:${activity}`;
   if (signature !== controlSignature || !$('#control-row').children.length) {
     controlSignature = signature;
-    $('#control-row').innerHTML = computer ? `<span>${isControl() ? 'You have control' : `${esc(bot.name)} has control${activity ? ` · ${esc(activity)}` : ''}`}</span><button class="button small ${isControl() ? '' : 'secondary'}" id="take-control">${isControl() ? 'Hand back' : 'Take over'}</button><button class="icon-button" id="stop-computer" aria-label="Stop computer" title="Stop computer">${icon('stop')}</button>` : '<span>Computer is stopped</span>';
+    $('#control-row').innerHTML = computer ? `<span>${isControl() ? 'You have control' : `${esc(bot.name)} has control${activity ? ` · ${esc(activity)}` : ''}`}</span><button class="button small ${isControl() ? '' : 'secondary'}" id="take-control">${isControl() ? 'Hand back' : 'Take over'}</button>` : '<span>Computer is stopped</span>';
     if ($('#take-control')) $('#take-control').onclick = () => action(async () => { await api('/api/computer/control', { botId: selectedBot, screen: selectedScreen, on: !isControl() }); await refresh(); });
-    if ($('#stop-computer')) $('#stop-computer').onclick = () => action(async () => { await api('/api/computer/stop', { botId: selectedBot }); destroyScreen(); await refresh(); });
   }
   $('#address-bar').hidden = !computer || !isControl();
   $('#screen-select').value = String(selectedScreen);
