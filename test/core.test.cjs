@@ -126,3 +126,42 @@ test('real mouse inputs stay behind approval and require visual tools to be enab
     assert.equal(inputs.length, 1); assert.deepEqual(inputs[0].slice(0, 3), ['blot', '/input', { kind: 'move', x: 400, y: 300, screen: 1 }]);
   } finally { await app.close(); await model.close(); }
 });
+
+test('reasoning sends the supported wire value and omits it for model default', async () => {
+  const requests = [];
+  const model = await fakeModel(request => { requests.push(request); return { content: 'OK' }; });
+  const settings = { baseUrl: model.base, model: 'audreyt/Qwen3.8-27B-Splash-abliterated', maxTokens: 256, temperature: .1 };
+  try {
+    for (const effort of ['none', 'low', 'medium', 'xhigh']) {
+      await complete({ ...settings, reasoningEffort: effort }, [{ role: 'user', content: 'hello' }], [], new AbortController().signal, () => {});
+      assert.equal(requests.at(-1).reasoning_effort, effort);
+    }
+    await complete({ ...settings, model: 'unverified-model', reasoningEffort: '' }, [{ role: 'user', content: 'hello' }], [], new AbortController().signal, () => {});
+    assert.equal('reasoning_effort' in requests.at(-1), false);
+    await assert.rejects(complete({ ...settings, reasoningEffort: 'max' }, [], [], new AbortController().signal, () => {}), /not supported/);
+    await assert.rejects(complete({ ...settings, model: 'unverified-model', reasoningEffort: 'low' }, [], [], new AbortController().signal, () => {}), /not supported/);
+    assert.equal(requests.length, 5);
+  } finally { await model.close(); }
+});
+test('model changes reset reasoning while queued turns retain the choices made when sent', async () => {
+  const requests = []; let releaseFirst;
+  const firstGate = new Promise(resolve => { releaseFirst = resolve; });
+  const model = await fakeModel(async request => { requests.push(request); if (requests.length === 1) await firstGate; return { content: 'OK' }; });
+  const app = await createServer({ port: 0, dataDir: temp() });
+  const call = async data => {
+    const r = await fetch(app.origin + '/api/settings', { method: 'POST', headers: { 'X-Blots': '1', 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+    return { status: r.status, data: await r.json() };
+  };
+  const addChat = () => { const c = { id: crypto.randomUUID(), botId: 'blot', title: 'test', messages: [] }; app.store.state.chats.push(c); return c; };
+  try {
+    assert.equal((await call({ baseUrl: model.base, model: 'incoai/Qwen3.8-27B-Splash', reasoningEffort: 'low' })).status, 200);
+    const first = app.agent.start(addChat().id, 'First', false); await wait(() => requests.length === 1);
+    assert.equal((await call({ model: 'audreyt/Qwen3.8-27B-Splash-abliterated' })).status, 200); assert.equal(app.store.state.settings.reasoningEffort, '');
+    await call({ reasoningEffort: 'xhigh' }); await call({ model: 'audreyt/Qwen3.8-27B-Splash-abliterated' }); assert.equal(app.store.state.settings.reasoningEffort, 'xhigh');
+    const second = app.agent.start(addChat().id, 'Second', false); await call({ model: 'unverified-model' });
+    assert.equal(app.store.state.settings.reasoningEffort, ''); assert.equal((await call({ reasoningEffort: 'high' })).status, 400);
+    assert.equal(app.store.state.settings.reasoningEffort, '');
+    releaseFirst(); await wait(() => first.status === 'done' && second.status === 'done');
+    assert.deepEqual(requests.map(r => [r.model, r.reasoning_effort]), [['incoai/Qwen3.8-27B-Splash', 'low'], ['audreyt/Qwen3.8-27B-Splash-abliterated', 'xhigh']]);
+  } finally { releaseFirst(); await app.close(); await model.close(); }
+});

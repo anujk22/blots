@@ -5,6 +5,7 @@ const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;
 const paths = {
   chat: 'M5 4h14v12H9l-4 4V4Z', file: 'M3 7h7l2-3h9v16H3V7Z', memory: 'M8 5a4 4 0 0 0-4 4v6a4 4 0 0 0 4 4h8a4 4 0 0 0 4-4V9a4 4 0 0 0-4-4M9 3v18M15 3v18M3 10h18M3 15h18',
   clock: 'M12 8v5l3 2M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z', activity: 'M3 12h4l3-8 4 16 3-8h4', settings: 'M4 7h16M4 17h16M8 4v6M16 14v6',
+  tools: 'm14 6 4-4a6 6 0 0 1-8 8L4 20l-3-3 10-7a6 6 0 0 1 3-8l-2 4 2 2Z', model: 'm12 3 9 5v8l-9 5-9-5V8l9-5ZM3 8l9 5 9-5M12 13v8', reasoning: 'M9 18h6M10 21h4M8 14a6 6 0 1 1 8 0l-1 2H9l-1-2ZM12 5v4',
   plus: 'M12 4v16M4 12h16', arrow: 'M5 12h14M13 6l6 6-6 6', send: 'M12 19V5M6 11l6-6 6 6', stop: 'M6 6h12v12H6Z', monitor: 'M3 4h18v13H3V4ZM8 21h8M12 17v4',
   expand: 'M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5', close: 'M6 6l12 12M18 6 6 18', edit: 'm4 16-1 5 5-1L20 8l-5-5L4 16ZM12 6l5 5', trash: 'M4 7h16M9 7V4h6v3M6 7l1 14h10l1-14M10 11v6M14 11v6', search: 'M15 15l6 6M17 10a7 7 0 1 1-14 0 7 7 0 0 1 14 0Z', down: 'M6 9l6 6 6-6', check: 'm5 12 4 4L19 6', download: 'M12 3v12M7 10l5 5 5-5M4 16v5h16v-5', folder: 'M3 6h7l2 3h9v11H3V6Z', terminal: 'm5 6 6 6-6 6M13 18h6', back: 'M19 12H5M11 6l-6 6 6 6', play: 'm8 4 12 8-12 8V4Z', pause: 'M7 5v14M17 5v14',
 };
@@ -25,6 +26,7 @@ function markdown(text) {
   return doc.body.innerHTML;
 }
 
+let toolsEnabled = localStorage.getItem('blots.tools') !== 'false', composerSaving = false;
 let state, selectedBot = localStorage.getItem('blots.bot') || 'blot', chatId = localStorage.getItem('blots.chat') || '', view = 'chat', selectedScreen = 1, modelList = [], connectionError = '', rfb, rfbKey = '', screenError = '', full = false, chatOpen = false, pollBusy = false, messagesSignature = '', listsSignature = '', pendingSend = false, toastTimer, filePath = '.', fileContent;
 const isLive = run => ['running', 'waiting', 'queued'].includes(run.status);
 const currentBot = () => state.bots.find(b => b.id === selectedBot) || state.bots[0];
@@ -42,7 +44,7 @@ function toast(message) { $('#toast').textContent = message; $('#toast').classLi
 async function action(fn) { try { await fn(); } catch (error) { toast(error.message); } }
 async function refresh() {
   if (pollBusy) return; pollBusy = true;
-  try { state = await api('/api/state'); if (!state.bots.some(b => b.id === selectedBot)) selectedBot = state.bots[0].id; renderLists(); if (view === 'chat') { renderMessages(); updateComputer(); renderActivity(); } if (view === 'settings') updateBuild(); if (view === 'activity') renderAllActivity(); }
+  try { state = await api('/api/state'); if (!state.bots.some(b => b.id === selectedBot)) selectedBot = state.bots[0].id; renderLists(); if (view === 'chat') { renderMessages(); updateComputer(); renderActivity(); updateComposerControls(); } if (view === 'settings') updateBuild(); if (view === 'activity') renderAllActivity(); }
   catch (error) { connectionError = error.message; $('#connection').textContent = 'Blots disconnected'; $('#connection').classList.add('offline'); }
   finally { pollBusy = false; }
 }
@@ -50,6 +52,7 @@ async function refreshModels() {
   try { modelList = (await api('/api/models')).models; connectionError = ''; if (!state.settings.model && modelList[0]) { await api('/api/settings', { model: modelList[0].id }); await refresh(); } $('#connection').textContent = modelList.length ? 'Local model connected' : 'Load a local model'; $('#connection').classList.toggle('offline', !modelList.length); }
   catch (error) { connectionError = error.message; $('#connection').textContent = 'Model server offline'; $('#connection').classList.add('offline'); }
   if (view === 'settings') populateModels();
+  updateComposerControls();
 }
 
 const navItems = [['chat', 'Conversations', 'chat'], ['files', 'Files', 'file'], ['memory', 'Memory', 'memory'], ['routines', 'Routines', 'clock'], ['activity', 'Activity', 'activity'], ['settings', 'Settings', 'settings']];
@@ -96,8 +99,12 @@ function renderChat() {
         <div class="control-row" id="control-row"></div>
       </div><div class="activity-panel" id="activity-panel"></div>
     </section>
-    <div class="composer-wrap"><form class="composer" id="composer"><textarea id="prompt" aria-label="Message your bot" placeholder="Message ${esc(bot.name)}…" rows="1"></textarea><div class="composer-bottom"><label class="tool-toggle"><input type="checkbox" id="tools-toggle" checked> Allow tools</label><button class="send-button" id="send" aria-label="Send message">${icon('send')}</button></div></form><div class="composer-caption">Local model · Private memory · Your computer</div></div>
+    <div class="composer-wrap"><form class="composer" id="composer"><textarea id="prompt" aria-label="Message your bot" placeholder="Message ${esc(bot.name)}…" rows="1"></textarea><div class="composer-bottom"><div class="composer-controls"><button type="button" class="composer-tool" id="tools-toggle" aria-label="Use tools" aria-pressed="${toolsEnabled}" title="${toolsEnabled ? 'Tools on · actions ask for approval' : 'Tools off · chat only'}">${icon('tools')}</button><label class="composer-select" title="Local model">${icon('model')}<select id="composer-model" aria-label="Model"></select>${icon('down')}</label><label class="composer-select reasoning-select">${icon('reasoning')}<select id="composer-reasoning" aria-label="Reasoning level"></select>${icon('down')}</label></div><button class="send-button" id="send" aria-label="Send message">${icon('send')}</button></div></form><div class="composer-caption">Local model · Private memory · Your computer</div></div>
   </div>`;
+  $('#tools-toggle').onclick = () => { toolsEnabled = !toolsEnabled; localStorage.setItem('blots.tools', String(toolsEnabled)); updateComposerControls(); };
+  $('#composer-model').onchange = event => action(() => saveComposerSettings({ model: event.target.value }));
+  $('#composer-reasoning').onchange = event => action(() => saveComposerSettings({ reasoningEffort: event.target.value }));
+  updateComposerControls();
   $('#toggle-chat').onclick = () => setChatOpen(!chatOpen);
   $('#close-chat').onclick = () => setChatOpen(false);
   $('#screen-select').onchange = event => { selectedScreen = Number(event.target.value); destroyScreen(); controlSignature = ''; updateComputer(); };
@@ -112,6 +119,33 @@ function renderChat() {
   $('#address-bar').onsubmit = event => { event.preventDefault(); action(async () => { toast('Opening page…'); await api('/api/computer/navigate', { botId: selectedBot, screen: selectedScreen, url: $('#address').value }); toast('Page opened'); }); };
   messagesSignature = ''; renderMessages(); updateComputer(); renderActivity();
 }
+const modelLabel = id => ({ 'incoai/Qwen3.8-27B-Splash': 'Splash 27B', 'audreyt/Qwen3.8-27B-Splash-abliterated': 'Splash 27B · Abliterated' }[id] || id.split('/').at(-1));
+const reasoningLabels = { '': 'Model default', none: 'Off', low: 'Low', medium: 'Medium', xhigh: 'High' };
+function updateComposerControls() {
+  if (!$('#composer-model')) return;
+  const model = state.settings.model, effort = state.settings.reasoningEffort || '';
+  const available = modelList.find(m => m.id === model)?.reasoning || [];
+  const values = [...new Set([model, ...modelList.map(m => m.id)].filter(Boolean))];
+  const signature = JSON.stringify([values, model, available, effort]);
+  if ($('#composer-model').dataset.signature !== signature) {
+    $('#composer-model').dataset.signature = signature;
+    $('#composer-model').innerHTML = values.length ? values.map(id => `<option value="${esc(id)}" ${id === model ? 'selected' : ''}>${esc(modelLabel(id))}</option>`).join('') : '<option value="">No local model</option>';
+    $('#composer-reasoning').innerHTML = ['', ...available].map(value => `<option value="${value}" ${value === effort ? 'selected' : ''}>${reasoningLabels[value]}</option>`).join('');
+  }
+  if (!composerSaving) { $('#composer-model').value = model; $('#composer-reasoning').value = effort; }
+  $('#composer-model').disabled = composerSaving || !values.length;
+  $('#composer-model').title = model || 'Connect a local model in Settings';
+  $('#composer-reasoning').disabled = composerSaving || !available.length;
+  $('.reasoning-select').title = available.length ? 'Reasoning for the next task · Off skips thinking; higher levels may take longer' : 'Reasoning support is unverified for this model; its default is used';
+  $('#tools-toggle').setAttribute('aria-pressed', String(toolsEnabled));
+  $('#tools-toggle').title = toolsEnabled ? 'Tools on · actions ask for approval' : 'Tools off · chat only';
+  $('#send').disabled = pendingSend || composerSaving;
+}
+async function saveComposerSettings(data) {
+  composerSaving = true; updateComposerControls();
+  try { await api('/api/settings', data); await refresh(); }
+  finally { composerSaving = false; updateComposerControls(); }
+}
 function setChatOpen(open) {
   chatOpen = open;
   $('.chat-layout')?.classList.toggle('chat-open', open);
@@ -120,14 +154,14 @@ function setChatOpen(open) {
   if (open && $('#messages')) $('#messages').scrollTop = $('#messages').scrollHeight;
 }
 async function sendMessage() {
-  if (pendingSend) return;
+  if (pendingSend || composerSaving) return;
   const prompt = $('#prompt'), text = prompt.value.trim();
   const running = currentRun(); if (running && isLive(running)) { await api('/api/stop', { runId: running.id }); await refresh(); return; }
   if (!text) return;
   pendingSend = true; $('#send').disabled = true;
   try {
     if (!currentChat()) { const chat = await api('/api/chats', { botId: selectedBot }); chatId = chat.id; localStorage.setItem('blots.chat', chatId); }
-    await api('/api/message', { chatId, text, tools: $('#tools-toggle').checked }); prompt.value = ''; prompt.style.height = ''; setChatOpen(true); await refresh();
+    await api('/api/message', { chatId, text, tools: toolsEnabled }); prompt.value = ''; prompt.style.height = ''; setChatOpen(true); await refresh();
   } finally { pendingSend = false; if ($('#send')) $('#send').disabled = false; }
 }
 function renderMessages() {

@@ -5,7 +5,7 @@ const path = require('node:path');
 const os = require('node:os');
 const { WebSocketServer, WebSocket } = require('ws');
 const { createStore, workspacePath, id, now } = require('./store.cjs');
-const { localBase, models } = require('./inference.cjs');
+const { localBase, models, reasoningOptions } = require('./inference.cjs');
 const { createComputers } = require('./computer.cjs');
 const { createTools } = require('./tools.cjs');
 const { createAgent } = require('./agent.cjs');
@@ -73,6 +73,11 @@ async function createServer(options = {}) {
           const data = await body(req), s = { ...store.state.settings };
           if (data.baseUrl !== undefined) s.baseUrl = localBase(data.baseUrl);
           if (data.model !== undefined) s.model = String(data.model).slice(0, 300);
+          if (s.model !== store.state.settings.model || s.baseUrl !== store.state.settings.baseUrl) s.reasoningEffort = '';
+          if (data.reasoningEffort !== undefined) {
+            if (typeof data.reasoningEffort !== 'string' || data.reasoningEffort && !reasoningOptions(s.model).includes(data.reasoningEffort)) throw new Error('Choose a reasoning level supported by this model.');
+            s.reasoningEffort = data.reasoningEffort;
+          }
           if (data.apiKey !== undefined) s.apiKey = String(data.apiKey).slice(0, 1000);
           if (data.vision !== undefined) s.vision = data.vision === true;
           for (const [key, min, max] of [['temperature', 0, 2], ['maxTokens', 256, 16384], ['maxSteps', 1, 40]]) if (data[key] !== undefined) {

@@ -11,7 +11,8 @@ Blots is independently built software, not a fork of Bops. There is no Blots acc
 1. Open Docker Desktop and wait for it to finish starting. No Docker account is required to run local containers.
 2. Run an OpenAI-compatible **local model server** with a tool-capable model loaded. Blots defaults to `http://127.0.0.1:8000/v1`. The app selects the first available model on first launch; change it in Settings. Ollama commonly uses `http://127.0.0.1:11434/v1`; LM Studio commonly uses `http://127.0.0.1:1234/v1`.
 3. Open **Blots.app**. Click **Start computer** beside your bot. On a fresh machine, first choose **Settings → Build computer image**. This downloads and builds the Linux desktop once; subsequent starts use the local image.
-4. Ask a bot to research a topic, draft a document, or organize files. Review requested writes and browser interactions. Click **Take over** to drive its real desktop; **Hand back** or Escape returns control.
+4. Use the composer’s tool icon to switch between chat and tool use. Pick a local model beside it. The reasoning picker offers Model default, Off, Low, Medium, and High for the two verified Qwen3.8 Splash packages; High sends their `xhigh` setting. Unverified models use their own default with the picker disabled. Switching models resets reasoning, and each task keeps the choices made when it was sent.
+5. Ask a bot to research a topic, draft a document, or organize files. Review requested writes and browser interactions. Click **Take over** to drive its real desktop; **Hand back** or Escape returns control.
 
 The supplied Mac app bundles its own Electron/Node runtime. You do not need Node to launch it. Docker Desktop and the local inference server are separate prerequisites; model weights are not included.
 

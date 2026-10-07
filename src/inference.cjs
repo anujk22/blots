@@ -6,6 +6,11 @@ function localBase(value) {
   return url.toString().replace(/\/+$/, '');
 }
 
+// These two Splash packages share the verified Qwen3.8 thinking template.
+function reasoningOptions(model) {
+  return ['incoai/Qwen3.8-27B-Splash', 'audreyt/Qwen3.8-27B-Splash-abliterated'].includes(model) ? ['none', 'low', 'medium', 'xhigh'] : [];
+}
+
 async function models(settings) {
   const res = await fetch(localBase(settings.baseUrl) + '/models', {
     headers: settings.apiKey ? { Authorization: `Bearer ${settings.apiKey}` } : {},
@@ -13,14 +18,16 @@ async function models(settings) {
   });
   if (!res.ok) throw new Error(`Model server returned ${res.status}. Check its address and API key.`);
   const data = await res.json();
-  return (data.data || []).filter(m => typeof m.id === 'string').map(m => ({ id: m.id, context: m.context_length || m.max_model_len }));
+  return (data.data || []).filter(m => typeof m.id === 'string').map(m => ({ id: m.id, context: m.context_length || m.max_model_len, reasoning: reasoningOptions(m.id) }));
 }
 
 async function complete(settings, messages, tools, signal, onDelta) {
+  const effort = settings.reasoningEffort || '';
+  if (effort && !reasoningOptions(settings.model).includes(effort)) throw new Error('This reasoning level is not supported by the selected model. Choose Model default.');
   const res = await fetch(localBase(settings.baseUrl) + '/chat/completions', {
     method: 'POST', redirect: 'error', signal,
     headers: { 'Content-Type': 'application/json', ...(settings.apiKey ? { Authorization: `Bearer ${settings.apiKey}` } : {}) },
-    body: JSON.stringify({ model: settings.model, messages, temperature: settings.temperature, max_tokens: settings.maxTokens, stream: true, ...(tools.length ? { tools, tool_choice: 'auto' } : {}) }),
+    body: JSON.stringify({ model: settings.model, messages, temperature: settings.temperature, max_tokens: settings.maxTokens, stream: true, ...(effort ? { reasoning_effort: effort } : {}), ...(tools.length ? { tools, tool_choice: 'auto' } : {}) }),
   });
   if (!res.ok) {
     const body = (await res.text()).slice(0, 600);
@@ -70,4 +77,4 @@ async function complete(settings, messages, tools, signal, onDelta) {
   return { role: 'assistant', content: content || null, ...(calls.size ? { tool_calls: [...calls.values()] } : {}), usage, finishReason };
 }
 
-module.exports = { localBase, models, complete };
+module.exports = { localBase, models, complete, reasoningOptions };

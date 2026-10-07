@@ -41,10 +41,11 @@ function createAgent(store, tools) {
     const controller = new AbortController();
     const job = { controller, chatId };
     active.set(run.id, job);
+    const settings = { ...store.state.settings };
+    run.model = settings.model; run.reasoningEffort = settings.reasoningEffort || '';
     job.promise = queue.catch(() => {}).then(async () => {
       const deadline = setTimeout(() => controller.abort(), 30 * 60 * 1000);
       run.status = 'running';
-      const settings = { ...store.state.settings };
       try {
         if (controller.signal.aborted) throw new Error('Stopped');
         if (!settings.model) {
