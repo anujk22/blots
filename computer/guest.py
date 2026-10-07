@@ -38,6 +38,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         try:
+            origin = self.headers.get('Origin')
+            if origin and origin not in ('http://127.0.0.1:8766', 'http://localhost:8766'):
+                return self.reply({'error': 'Requests must come from Blots'}, 403)
             if int(self.headers.get('Content-Length', '0')) > 100000:
                 return self.reply({'error': 'Request too large'}, 413)
             data = json.loads(self.rfile.read(int(self.headers.get('Content-Length', '0'))))

@@ -31,11 +31,11 @@ async function complete(settings, messages, tools, signal, onDelta) {
     const message = data.choices?.[0]?.message;
     if (!message) throw new Error('The model server returned no answer.');
     if (message.content) onDelta(message.content);
-    return { ...message, usage: data.usage };
+    return { ...message, usage: data.usage, finishReason: data.choices[0].finish_reason };
   }
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
-  let buffer = '', content = '', usage;
+  let buffer = '', content = '', usage, finishReason;
   const calls = new Map();
   const consume = line => {
     if (!line.startsWith('data:')) return;
@@ -44,6 +44,7 @@ async function complete(settings, messages, tools, signal, onDelta) {
     const data = JSON.parse(body);
     if (data.error) throw new Error(data.error.message || 'The model server failed during generation.');
     if (data.usage) usage = data.usage;
+    if (data.choices?.[0]?.finish_reason) finishReason = data.choices[0].finish_reason;
     const delta = data.choices?.[0]?.delta;
     if (!delta) return;
     if (delta.content) { content += delta.content; onDelta(delta.content); }
@@ -66,7 +67,7 @@ async function complete(settings, messages, tools, signal, onDelta) {
     buffer += decoder.decode();
     if (buffer.trim()) consume(buffer.trim());
   } finally { reader.releaseLock(); }
-  return { role: 'assistant', content: content || null, ...(calls.size ? { tool_calls: [...calls.values()] } : {}), usage };
+  return { role: 'assistant', content: content || null, ...(calls.size ? { tool_calls: [...calls.values()] } : {}), usage, finishReason };
 }
 
 module.exports = { localBase, models, complete };

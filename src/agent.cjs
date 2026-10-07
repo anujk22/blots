@@ -68,6 +68,7 @@ function createAgent(store, tools) {
           if (controller.signal.aborted) throw new Error('Stopped');
           run.activity = i ? 'Thinking about the results' : 'Thinking'; run.draft = '';
           const answer = await complete(settings, messages, availableTools, controller.signal, delta => { run.draft += delta; });
+          if (answer.finishReason === 'length') throw new Error('The model reached its reply limit. Increase Maximum reply tokens in Settings and try again.');
           if (answer.usage) run.tokens = (run.tokens || 0) + (answer.usage.total_tokens || 0);
           if (!answer.tool_calls?.length) {
             const content = answer.content || 'The model returned no text. Try another model or check its tool support.';

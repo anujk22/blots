@@ -21,7 +21,7 @@ for n in 1 2 3 4; do
   x11vnc -display :$n -forever -shared -nopw -rfbport $((5900+n)) -quiet > /tmp/vnc-$n.log 2>&1 &
   DISPLAY=:$n chromium --no-sandbox --test-type --disable-dev-shm-usage --no-first-run \
     --disable-session-crashed-bubble --password-store=basic --disable-background-networking \
-    --remote-debugging-port=$((9220+n)) --remote-allow-origins='*' \
+    --remote-debugging-port=$((9220+n)) \
     --user-data-dir=/home/blots/profiles/s$n --window-size=1280,800 --start-maximized \
     --app="http://127.0.0.1:8766/?screen=$n" > /tmp/chrome-$n.log 2>&1 &
   socat TCP-LISTEN:$((9230+n)),fork,reuseaddr TCP:127.0.0.1:$((9220+n)) > /tmp/cdp-$n.log 2>&1 &
