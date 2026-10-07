@@ -2,6 +2,7 @@ const { app, BrowserWindow, Menu, dialog, shell, ipcMain, nativeTheme } = requir
 const path = require('node:path');
 const { createServer } = require('./server.cjs');
 app.setName('Blots');
+app.commandLine.appendSwitch('disk-cache-size', '33554432');
 let backend, window, quitting = false;
 const lock = app.requestSingleInstanceLock();
 if (!lock) app.quit();

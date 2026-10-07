@@ -48,5 +48,11 @@ def theme(home, identity):
             table = bytearray()
             for chunk in chunks:
                 table.extend(struct.pack('<3I', 0xfffd0002, 64, offset)); offset += len(chunk)
-            cache[source] = struct.pack('<4I', 0x72756358, 16, 0x10000, len(chunks)) + table + b''.join(chunks)
-        (directory / 'cursors' / alias.name).write_bytes(cache[source])
+            rendered = struct.pack('<4I', 0x72756358, 16, 0x10000, len(chunks)) + table + b''.join(chunks)
+            cache[source] = alias.name
+        target = directory / 'cursors' / alias.name
+        target.unlink(missing_ok=True)
+        if alias.name == cache[source]:
+            target.write_bytes(rendered)
+        else:
+            target.symlink_to(cache[source])

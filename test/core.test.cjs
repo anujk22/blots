@@ -83,14 +83,14 @@ test('denial and cancellation never execute a pending action; bots queue local i
   try {
     const chat1 = addChat('blot'), chat2 = addChat('scout');
     const first = app.agent.start(chat1.id, 'save'); const second = app.agent.start(chat2.id, 'save');
-    await wait(() => first.approval); assert.equal(second.status, 'queued');
+    await wait(() => first.approval && second.approval); assert.equal(first.status, 'waiting'); assert.equal(second.status, 'waiting');
     app.agent.approve(first.approval.id, false); await wait(() => first.status === 'done');
     await wait(() => second.approval); app.agent.stop(second.id); await wait(() => second.status === 'stopped');
     assert.equal(fs.existsSync(path.join(app.store.workspace, 'never.md')), false);
     assert.equal(chat1.messages.at(-1).content, 'Respected the decision.');
   } finally { await app.close(); await model.close(); }
 });
-test('delegation queues a teammate after the parent without deadlock', async () => {
+test('delegation runs a teammate through the shared model queue without deadlock', async () => {
   const model = await fakeModel(request => {
     if (request.messages.some(m => m.role === 'tool')) return { content: 'Scout is queued.' };
     if (request.messages.at(-1).content === 'Parent task') return { tool_calls: [{ index: 0, id: 'delegate', type: 'function', function: { name: 'delegate_task', arguments: JSON.stringify({ bot: 'Scout', task: 'Child task' }) } }] };
@@ -272,4 +272,67 @@ test('Auto mode respects human takeover and cancellation without executing block
     app.computers.takeover('blot', 1, false);
     assert.equal(executed.length, 1);
   } finally { await app.close(); await model.close(); }
+});
+
+test('three bots overlap computer work while inference and each bot’s own turns remain serialized', async () => {
+  let inFlight = 0, peak = 0, release;
+  const gate = new Promise(resolve => { release = resolve; });
+  const requests = [], working = [];
+  const model = await fakeModel(async request => {
+    inFlight++; peak = Math.max(peak, inFlight); requests.push(request);
+    await new Promise(resolve => setTimeout(resolve, 15)); inFlight--;
+    return request.messages.some(m => m.role === 'tool') ? { content: 'Done.' } : { tool_calls: [{ index: 0, id: 'move', type: 'function', function: { name: 'computer_move', arguments: '{"x":400,"y":300}' } }] };
+  });
+  const app = await createServer({ port: 0, dataDir: temp() });
+  Object.assign(app.store.state.settings, { baseUrl: model.base, model: 'test-model', vision: true });
+  for (const bot of app.store.state.bots) bot.autoApproveLinux = true;
+  app.computers.guest = async bot => { working.push(bot); await gate; return { ok: true }; };
+  const addChat = botId => { const chat = { id: crypto.randomUUID(), botId, title: 'test', messages: [] }; app.store.state.chats.push(chat); return chat; };
+  try {
+    const runs = ['blot', 'scout', 'quill'].map(bot => app.agent.start(addChat(bot).id, 'Move the mouse.'));
+    await wait(() => working.length === 3);
+    assert.deepEqual(working, ['blot', 'scout', 'quill']); assert.equal(peak, 1);
+    const next = app.agent.start(addChat('blot').id, 'Move again.');
+    const cancelled = app.agent.start(addChat('quill').id, 'Never move.'); app.agent.stop(cancelled.id);
+    assert.equal(next.status, 'queued'); assert.equal(requests.length, 3);
+    release(); await wait(() => [...runs, next, cancelled].every(r => ['done', 'stopped'].includes(r.status)));
+    assert.equal(peak, 1); assert.equal(working.filter(bot => bot === 'blot').length, 2);
+    assert.equal(working.filter(bot => bot === 'quill').length, 1); assert.equal(cancelled.status, 'stopped');
+  } finally { release(); await app.close(); await model.close(); }
+});
+
+test('visual tool turns retain only the latest desktop screenshots in model context', async () => {
+  const images = [];
+  const model = await fakeModel(request => {
+    const current = request.messages.filter(m => Array.isArray(m.content)).flatMap(m => m.content.filter(c => c.type === 'image_url'));
+    images.push(current.map(c => c.image_url.url));
+    return request.messages.filter(m => m.role === 'tool').length < 2 ? { tool_calls: [{ index: 0, id: 'shot-'+images.length, type: 'function', function: { name: 'computer_screenshot', arguments: '{}' } }] } : { content: 'Checked.' };
+  });
+  const app = await createServer({ port: 0, dataDir: temp() });
+  Object.assign(app.store.state.settings, { baseUrl: model.base, model: 'test-model', vision: true });
+  let number = 0; app.computers.guest = async () => Buffer.from('screen-'+(++number));
+  const chat = { id: crypto.randomUUID(), botId: 'blot', title: 'test', messages: [] }; app.store.state.chats.push(chat);
+  try {
+    const run = app.agent.start(chat.id, 'Inspect twice.'); await wait(() => run.status === 'done');
+    assert.deepEqual(images.map(list => list.length), [0, 1, 1]);
+    assert.notEqual(images[1][0], images[2][0]); assert.equal(number, 2);
+    assert.equal(JSON.stringify(app.store.state).includes('data:image'), false);
+  } finally { await app.close(); await model.close(); }
+});
+
+test('unchanged state polls send no body, while drafts and computer control invalidate the response', async () => {
+  const app = await createServer({ port: 0, dataDir: temp() });
+  const get = etag => fetch(app.origin+'/api/state', { headers: { 'X-Blots': '1', ...(etag ? { 'If-None-Match': etag } : {}) } });
+  try {
+    const first = await get(); const tag = first.headers.get('etag'); assert.ok(tag); await first.json();
+    const unchanged = await get(tag); assert.equal(unchanged.status, 304); assert.equal(await unchanged.text(), '');
+    app.store.state.runs.push({ id: 'draft', botId: 'blot', status: 'running', draft: 'First' });
+    const updated = await get(tag); assert.equal(updated.status, 200); const next = updated.headers.get('etag'); await updated.json();
+    app.store.state.runs[0].draft += ' token';
+    const streaming = await get(next); assert.equal(streaming.status, 200); assert.notEqual(streaming.headers.get('etag'), next); await streaming.json();
+    app.computers.status = () => [{ botId: 'blot', status: 'ready', controlled: [1] }];
+    const control = await get(streaming.headers.get('etag')); assert.equal(control.status, 200); assert.deepEqual((await control.json()).computers[0].controlled, [1]);
+    const disk = fs.readFileSync(path.join(app.store.dataDir, 'state.json'), 'utf8');
+    assert.deepEqual(JSON.parse(disk).bots, app.store.state.bots); assert.equal(disk.includes('\n  '), false);
+  } finally { await app.close(); }
 });

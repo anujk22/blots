@@ -26,7 +26,7 @@ function createStore(dataDir) {
     if (state.version !== 1 || !Array.isArray(state.bots)) throw new Error('Blots cannot read this data version. Your data has been left intact.');
   } else state = initial();
   const save = () => {
-    fs.writeFileSync(file + '.tmp', JSON.stringify(state, null, 2), { mode: 0o600 });
+    fs.writeFileSync(file + '.tmp', JSON.stringify(state), { mode: 0o600 });
     fs.renameSync(file + '.tmp', file);
   };
   // Interrupted work is recorded, never silently resumed after a restart.

@@ -3,7 +3,8 @@ const net = require('node:net');
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
-const { WebSocketServer, WebSocket } = require('ws');
+const { WebSocketServer, createWebSocketStream } = require('ws');
+const { createHash } = require('node:crypto');
 const { createStore, workspacePath, id, now } = require('./store.cjs');
 const { localBase, models, reasoningOptions } = require('./inference.cjs');
 const { createComputers } = require('./computer.cjs');
@@ -66,7 +67,11 @@ async function createServer(options = {}) {
         if (req.headers['x-blots'] !== '1') return json(res, { error: 'Use the Blots app to access local data.' }, 403);
         if (route === '/api/state' && method === 'GET') {
           const { apiKey, ...settings } = store.state.settings;
-          return json(res, { ...store.state, settings: { ...settings, keyConfigured: !!apiKey }, computers: computers.status(), startingComputers: computers.starting(), build: buildState, workspace: store.workspace });
+          const payload = JSON.stringify({ ...store.state, settings: { ...settings, keyConfigured: !!apiKey }, computers: computers.status(), startingComputers: computers.starting(), build: buildState, workspace: store.workspace });
+          const etag = '"' + createHash('sha1').update(payload).digest('base64') + '"';
+          res.setHeader('ETag', etag); res.setHeader('Cache-Control', 'no-store');
+          if (req.headers['if-none-match'] === etag) { res.writeHead(304); return res.end(); }
+          res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(payload);
         }
         if (route === '/api/models' && method === 'GET') return json(res, { models: await models(store.state.settings) });
         if (route === '/api/settings' && method === 'POST') {
@@ -187,12 +192,12 @@ async function createServer(options = {}) {
     const botId = url.searchParams.get('bot'), screen = Number(url.searchParams.get('screen'));
     if (!store.state.bots.some(b => b.id === botId) || ![1, 2, 3, 4].includes(screen)) return socket.destroy();
     try {
-      const computer = await computers.ensure(botId);
+      const computer = await computers.ensureScreen(botId, screen);
       wss.handleUpgrade(req, socket, head, ws => {
         const tcp = net.connect(computer.ports[5900 + screen], '127.0.0.1');
-        tcp.on('data', data => { if (ws.readyState === WebSocket.OPEN) ws.send(data); });
-        ws.on('message', data => tcp.write(Buffer.from(data)));
-        tcp.on('error', () => ws.close()); tcp.on('close', () => ws.close()); ws.on('close', () => tcp.destroy()); ws.on('error', () => tcp.destroy());
+        const stream = createWebSocketStream(ws);
+        tcp.pipe(stream).pipe(tcp);
+        tcp.on('error', () => stream.destroy()); stream.on('error', () => tcp.destroy()); stream.on('close', () => tcp.destroy()); tcp.on('close', () => stream.destroy());
       });
     } catch { socket.destroy(); }
   });

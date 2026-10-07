@@ -33,9 +33,9 @@ function createComputers(store) {
       appearance(botId);
       try { await runDocker(['info', '--format', '{{.ServerVersion}}'], 10000); }
       catch { throw new Error('Open Docker Desktop, wait for it to start, then start this computer.'); }
-      try { await runDocker(['image', 'inspect', IMAGE]); }
+      let image;
+      try { image = JSON.parse((await runDocker(['image', 'inspect', IMAGE])).stdout)[0]; }
       catch { throw new Error('The Blots desktop image is missing. Open Settings and build the computer image first.'); }
-      const image = JSON.parse((await runDocker(['image', 'inspect', IMAGE])).stdout)[0];
       let container;
       try { container = JSON.parse((await runDocker(['inspect', name(botId)])).stdout)[0]; }
       catch {}
@@ -46,7 +46,7 @@ function createComputers(store) {
       }
       if (!container) {
         const home = path.join(store.dataDir, 'computers', botId);
-        const args = ['run', '-d', '--name', name(botId), '--label', 'app=blots', '--memory', '2g', '--cpus', '2', '--shm-size', '512m', '--security-opt', 'no-new-privileges', '-e', `TZ=${Intl.DateTimeFormat().resolvedOptions().timeZone}`, '-v', `${home}:/home/blots`, '-v', `${store.workspace}:/workspace`];
+        const args = ['run', '-d', '--name', name(botId), '--label', 'app=blots', '--memory', '2g', '--cpus', '2', '--shm-size', '512m', '--log-opt', 'max-size=5m', '--log-opt', 'max-file=2', '--security-opt', 'no-new-privileges', '-e', `TZ=${Intl.DateTimeFormat().resolvedOptions().timeZone}`, '-v', `${home}:/home/blots`, '-v', `${store.workspace}:/workspace`];
         for (const port of [8766, 5901, 5902, 5903, 5904, 9231, 9232, 9233, 9234]) args.push('-p', `127.0.0.1::${port}`);
         args.push(IMAGE); await runDocker(args);
         container = JSON.parse((await runDocker(['inspect', name(botId)])).stdout)[0];
@@ -57,13 +57,13 @@ function createComputers(store) {
       }
       const ports = {};
       for (const [key, bindings] of Object.entries(container.NetworkSettings.Ports)) if (bindings?.length) ports[parseInt(key)] = Number(bindings[0].HostPort);
-      const entry = { botId, ports, browser: null };
+      const entry = { botId, ports, screens: new Set([1]), startingScreens: new Map() };
       for (let i = 0; i < 60; i++) {
         try {
           const r = await fetch(`http://127.0.0.1:${ports[8766]}/health`, { signal: AbortSignal.timeout(1000) });
           if (r.ok) {
-            const screens = await Promise.all([1, 2, 3, 4].map(n => fetch(`http://127.0.0.1:${ports[9230 + n]}/json/version`, { signal: AbortSignal.timeout(1000) }).then(r => r.ok)));
-            if (screens.every(Boolean)) { computers.set(botId, entry); return entry; }
+            const browser = await fetch(`http://127.0.0.1:${ports[9231]}/json/version`, { signal: AbortSignal.timeout(1000) });
+            if (browser.ok) { computers.set(botId, entry); return entry; }
           }
         } catch {}
         await new Promise(resolve => setTimeout(resolve, 500));
@@ -73,15 +73,34 @@ function createComputers(store) {
     starting.set(botId, job);
     try { return await job; } finally { starting.delete(botId); }
   }
-  async function guest(botId, route, data, signal) {
+  async function ensureScreen(botId, screen = 1) {
     const computer = await ensure(botId);
+    if (computer.screens.has(screen)) return computer;
+    if (computer.startingScreens.has(screen)) return computer.startingScreens.get(screen);
+    const job = (async () => {
+      const response = await fetch(`http://127.0.0.1:${computer.ports[8766]}/screen`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ screen }), signal: AbortSignal.timeout(10000) });
+      if (!response.ok) throw new Error((await response.json()).error || 'The screen did not start.');
+      for (let i = 0; i < 40; i++) {
+        try {
+          const browser = await fetch(`http://127.0.0.1:${computer.ports[9230+screen]}/json/version`, { signal: AbortSignal.timeout(1000) });
+          if (browser.ok) { computer.screens.add(screen); return computer; }
+        } catch {}
+        await new Promise(resolve => setTimeout(resolve, 250));
+      }
+      throw new Error('The screen did not start in time.');
+    })();
+    computer.startingScreens.set(screen, job);
+    try { return await job; } finally { computer.startingScreens.delete(screen); }
+  }
+  async function guest(botId, route, data, signal) {
+    const computer = await ensureScreen(botId, Number(data?.screen || new URL(route, 'http://guest').searchParams.get('screen') || 1));
     if (signal?.aborted) throw new Error('Stopped');
     const response = await fetch(`http://127.0.0.1:${computer.ports[8766]}${route}`, { ...(data ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) } : {}), signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(40000)]) : AbortSignal.timeout(40000) });
     if (!response.ok) throw new Error((await response.json()).error || 'Computer request failed.');
     return response.headers.get('content-type').includes('image/') ? Buffer.from(await response.arrayBuffer()) : response.json();
   }
   async function page(botId, screen = 1, signal) {
-    const computer = await ensure(botId);
+    const computer = await ensureScreen(botId, screen);
     if (signal?.aborted) throw new Error('Stopped');
     const key = `browser${screen}`;
     if (!computer[key]) {
@@ -116,7 +135,7 @@ function createComputers(store) {
     computers.delete(botId);
     for (let screen = 1; screen <= 4; screen++) takeover(botId, screen, false);
   }
-  return { ensure, guest, page, takeover, waitForControl, controls, stop, appearance,
+  return { ensure, ensureScreen, guest, page, takeover, waitForControl, controls, stop, appearance,
     status: () => [...computers.keys()].map(botId => ({ botId, status: 'ready', controlled: [1, 2, 3, 4].filter(n => controls.has(`${botId}:${n}`)) })),
     starting: () => [...starting.keys()],
     build: async onOutput => {
@@ -130,7 +149,7 @@ function createComputers(store) {
         proc.on('error', reject); proc.on('exit', code => code === 0 ? resolve() : reject(new Error(`Computer build failed (${code}). ${log.slice(-1200)}`)));
       });
     },
-    close: async () => { for (const botId of computers.keys()) await stop(botId).catch(() => {}); },
+    close: async () => { await Promise.allSettled([...starting.values()]); await Promise.allSettled([...computers.keys()].map(stop)); },
   };
 }
 module.exports = { createComputers, IMAGE };

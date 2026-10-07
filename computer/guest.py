@@ -1,4 +1,5 @@
-import json, os, subprocess, tempfile
+import json, os, subprocess, tempfile, selectors, time
+from collections import deque
 import mimetypes
 from pathlib import Path
 import gi
@@ -6,6 +7,7 @@ gi.require_version('Gtk', '3.0')
 from gi.repository import Gtk
 from desktop import appearance, APPS
 from pointer import move
+from screen import start_screen, browser_command
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
@@ -74,6 +76,9 @@ class Handler(BaseHTTPRequestHandler):
             if screen not in ['1', '2', '3', '4']:
                 raise ValueError('Invalid screen')
             env = dict(os.environ, DISPLAY=':'+screen)
+            if self.path == '/screen':
+                start_screen(int(screen))
+                return self.reply({'ready': True})
             if self.path == '/launch':
                 app = APPS.get(data.get('app'))
                 if not app:
@@ -84,7 +89,7 @@ class Handler(BaseHTTPRequestHandler):
                     if windows:
                         subprocess.run(['xdotool', 'windowactivate', windows[-1]], env=env, check=True, capture_output=True)
                         return self.reply({'launched': 'browser'})
-                    command = ['chromium', '--no-sandbox', '--test-type', '--no-first-run', '--password-store=basic', '--user-data-dir=/home/blots/profiles/s'+screen, '--new-window', 'http://127.0.0.1:8766/?screen='+screen]
+                    command = browser_command(int(screen))
                 subprocess.Popen(command, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 return self.reply({'launched': data['app']})
             if self.path == '/exec':
@@ -92,14 +97,30 @@ class Handler(BaseHTTPRequestHandler):
                 if not isinstance(command, str) or len(command) > 20000:
                     raise ValueError('Invalid command')
                 proc = subprocess.Popen(['/bin/bash', '-lc', command], env=env, cwd='/workspace', stdout=subprocess.PIPE, stderr=subprocess.STDOUT, start_new_session=True)
-                try:
-                    output, _ = proc.communicate(timeout=30)
-                except subprocess.TimeoutExpired:
-                    import signal
-                    os.killpg(proc.pid, signal.SIGKILL)
-                    output, _ = proc.communicate()
-                    return self.reply({'output': output.decode(errors='replace')[-20000:], 'exitCode': -1, 'error': 'Command exceeded 30 seconds'})
-                return self.reply({'output': output.decode(errors='replace')[-20000:], 'exitCode': proc.returncode})
+                chunks = deque(maxlen=3)
+                deadline, timed_out = time.monotonic()+30, False
+                with selectors.DefaultSelector() as stream:
+                    stream.register(proc.stdout, selectors.EVENT_READ)
+                    try:
+                        while stream.get_map():
+                            remaining = deadline-time.monotonic()
+                            if remaining <= 0:
+                                raise subprocess.TimeoutExpired(command, 30)
+                            for key, _ in stream.select(remaining):
+                                chunk = os.read(key.fd, 32768)
+                                if chunk:
+                                    chunks.append(chunk)
+                                else:
+                                    stream.unregister(key.fileobj)
+                        proc.wait(timeout=max(.001, deadline-time.monotonic()))
+                    except subprocess.TimeoutExpired:
+                        import signal
+                        os.killpg(proc.pid, signal.SIGKILL)
+                        proc.wait(); timed_out = True
+                    finally:
+                        proc.stdout.close()
+                output = b''.join(chunks).decode(errors='replace')[-20000:]
+                return self.reply({'output': output, 'exitCode': -1 if timed_out else proc.returncode, **({'error': 'Command exceeded 30 seconds'} if timed_out else {})})
             if self.path == '/input':
                 kind = data.get('kind')
                 if kind in ['click', 'move']:
@@ -132,4 +153,7 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as e:
             self.reply({'error': str(e)}, 400)
 
-ThreadingHTTPServer(('0.0.0.0', 8766), Handler).serve_forever()
+server = ThreadingHTTPServer(('0.0.0.0', 8766), Handler)
+import threading
+threading.Thread(target=start_screen, args=(1,), daemon=True).start()
+server.serve_forever()

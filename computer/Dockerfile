@@ -7,7 +7,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     openscad paraview qgis aisleriot && rm -rf /var/lib/apt/lists/*
 RUN apt-get update && apt-get install -y --no-install-recommends python3-cairo python3-gi-cairo && rm -rf /var/lib/apt/lists/*
 RUN useradd -m -u 1000 -s /bin/bash blots && mkdir -p /opt/blots /workspace && chown -R blots:blots /workspace
-COPY guest.py home.html start.sh desktop.py cursor.py pointer.py apps.json /opt/blots/
+COPY guest.py home.html start.sh desktop.py cursor.py pointer.py screen.py apps.json /opt/blots/
 COPY avatars /opt/blots/avatars/
 RUN chmod +x /opt/blots/start.sh
 USER blots

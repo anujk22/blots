@@ -29,6 +29,7 @@ function markdown(text) {
 
 let paneShare, paneObserver;
 let composerSaving = false, approvalSaving = false;
+let stateETag = '';
 let state, selectedBot = localStorage.getItem('blots.bot') || 'blot', chatId = localStorage.getItem('blots.chat') || '', view = 'chat', selectedScreen = 1, modelList = [], connectionError = '', rfb, rfbKey = '', screenError = '', full = false, chatOpen = true, pollBusy = false, messagesSignature = '', listsSignature = '', pendingSend = false, toastTimer, filePath = '.', fileContent;
 const isLive = run => ['running', 'waiting', 'queued'].includes(run.status);
 const currentBot = () => state.bots.find(b => b.id === selectedBot) || state.bots[0];
@@ -46,7 +47,13 @@ function toast(message) { $('#toast').textContent = message; $('#toast').classLi
 async function action(fn) { try { await fn(); } catch (error) { toast(error.message); } }
 async function refresh() {
   if (pollBusy) return; pollBusy = true;
-  try { state = await api('/api/state'); if (!state.bots.some(b => b.id === selectedBot)) selectedBot = state.bots[0].id; renderLists(); if (view === 'chat') { renderMessages(); updateComputer(); renderActivity(); updateComposerControls(); } if (view === 'settings') updateBuild(); if (view === 'activity') renderAllActivity(); }
+  try {
+    const response = await fetch('/api/state', { headers: { 'X-Blots': '1', ...(stateETag ? { 'If-None-Match': stateETag } : {}) } });
+    if (response.status === 304) { if (view === 'chat') updateComputer(); return; }
+    const next = await response.json(); if (!response.ok) throw new Error(next.error || 'Request failed.');
+    stateETag = response.headers.get('ETag') || ''; state = next;
+    if (!state.bots.some(b => b.id === selectedBot)) selectedBot = state.bots[0].id; renderLists(); if (view === 'chat') { renderMessages(); updateComputer(); renderActivity(); updateComposerControls(); } if (view === 'settings') updateBuild(); if (view === 'activity') renderAllActivity();
+  }
   catch (error) { connectionError = error.message; $('#connection').textContent = 'Blots disconnected'; $('#connection').classList.add('offline'); }
   finally { pollBusy = false; }
 }
@@ -118,8 +125,8 @@ function renderChat() {
   $('#new-chat').onclick = () => action(newChat); $('#edit-bot').onclick = () => botDialog(bot);
   $('#delete-chat').onclick = () => { if (currentChat()) confirmDialog('Delete this conversation?', 'This removes its messages and activity from Blots.', async () => { await api('/api/chats/delete', { id: chatId }); chatId = ''; await refresh(); showView('chat'); }); };
   $('#expand-computer').onclick = () => { full = !full; $('.chat-layout').classList.toggle('computer-expanded', full); $('#computer-pane').classList.toggle('computer-full', full); $('#computer-pane').style.bottom = full ? $('.composer-wrap').getBoundingClientRect().height + 'px' : ''; $('#expand-computer').innerHTML = icon(full ? 'close' : 'expand'); $('#expand-computer').setAttribute('aria-label', full ? 'Collapse computer' : 'Expand computer'); if (rfb) rfb.scaleViewport = true; };
-  $('#computer-tab').onclick = () => { $('#activity-panel').classList.remove('visible'); $('#computer-work').style.display = 'flex'; $('#computer-tab').classList.add('selected'); $('#activity-tab').classList.remove('selected'); };
-  $('#activity-tab').onclick = () => { $('#activity-panel').classList.add('visible'); $('#computer-work').style.display = 'none'; $('#computer-tab').classList.remove('selected'); $('#activity-tab').classList.add('selected'); };
+  $('#computer-tab').onclick = () => { $('#activity-panel').classList.remove('visible'); $('#computer-work').style.display = 'flex'; $('#computer-tab').classList.add('selected'); $('#activity-tab').classList.remove('selected'); updateComputer(); };
+  $('#activity-tab').onclick = () => { $('#activity-panel').classList.add('visible'); $('#computer-work').style.display = 'none'; $('#computer-tab').classList.remove('selected'); $('#activity-tab').classList.add('selected'); destroyScreen(); };
   $('#address-bar').onsubmit = event => { event.preventDefault(); action(async () => { toast('Opening page…'); await api('/api/computer/navigate', { botId: selectedBot, screen: selectedScreen, url: $('#address').value }); toast('Page opened'); }); };
   messagesSignature = ''; renderMessages(); updateComputer(); renderActivity();
 }
@@ -243,6 +250,7 @@ function approvalHTML(approval) {
 let controlSignature = '';
 function updateComputer() {
   if (!$('#screen-host')) return;
+  if (document.hidden || $('#activity-panel').classList.contains('visible')) { destroyScreen(); return; }
   const computer = currentComputer(), starting = state.startingComputers.includes(selectedBot), bot = currentBot();
   const run = state.runs.find(r => r.botId === selectedBot && isLive(r));
   const step = run?.steps.at(-1);
@@ -256,9 +264,10 @@ function updateComputer() {
     if (rfbKey !== key) {
       destroyScreen(); const host = $('#screen-host'); host.innerHTML = '<div id="vnc-screen"></div>'; host.dataset.state = 'ready';
       rfbKey = key; rfb = new RFB($('#vnc-screen'), `${location.origin.replace('http', 'ws')}/vnc?bot=${encodeURIComponent(selectedBot)}&screen=${selectedScreen}`, { shared: true });
+      const connection = rfb;
       rfb.scaleViewport = true; rfb.resizeSession = false; rfb.viewOnly = !isControl(); rfb.qualityLevel = 7; rfb.compressionLevel = 2; rfb.background = '#172130';
       rfb.addEventListener('connect', () => { screenError = ''; updateComputer(); });
-      rfb.addEventListener('disconnect', event => { if (rfbKey === key) { rfbKey = ''; screenError = event.detail.clean ? '' : 'Screen connection dropped. Reconnecting…'; } });
+      rfb.addEventListener('disconnect', event => { if (rfb === connection && rfbKey === key) { rfbKey = ''; screenError = event.detail.clean ? '' : 'Screen connection dropped. Reconnecting…'; } });
     }
     if (rfb) rfb.viewOnly = !isControl();
   }
@@ -345,4 +354,5 @@ window.blotsDesktop?.onNewChat(() => action(newChat));
 await refresh();
 if (state) { showView('chat'); await refreshModels(); }
 async function poll() { await refresh(); setTimeout(poll, document.hidden ? 5000 : state?.runs.some(isLive) ? 700 : 2000); }
-setTimeout(poll, 1000); setInterval(refreshModels, 30000);
+document.addEventListener('visibilitychange', () => { if (view === 'chat') updateComputer(); if (!document.hidden) { refresh(); refreshModels(); } });
+setTimeout(poll, 1000); setInterval(() => { if (!document.hidden) refreshModels(); }, 30000);
