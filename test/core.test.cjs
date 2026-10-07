@@ -381,11 +381,11 @@ test('a paused task continues after reopening with its tool results and never re
   } finally {await app.close();await model.close();}
 });
 
-test('identical action-and-result loops pause with a resumable checkpoint', async () => {
+test('an unrecovered loop reaches the configured task budget rather than stopping after four inputs', async () => {
   const model=await fakeModel(()=>({tool_calls:[{index:0,id:'loop',type:'function',function:{name:'computer_move',arguments:'{"x":400,"y":300}'}}]}));
-  const app=await createServer({port:0,dataDir:temp()});Object.assign(app.store.state.settings,{baseUrl:model.base,model:'test-model',vision:true});app.store.state.bots[0].autoApproveLinux=true;
-  let calls=0;app.computers.guest=async()=>{calls++;return {ok:true};};const chat={id:crypto.randomUUID(),botId:'blot',title:'test',messages:[]};app.store.state.chats.push(chat);
-  try {const run=app.agent.start(chat.id,'Inspect the desktop.');await wait(()=>run.status==='paused');assert.equal(calls,4);assert.match(run.error,/identical/);assert.equal(run.resumable,true);}
+  const app=await createServer({port:0,dataDir:temp()});Object.assign(app.store.state.settings,{baseUrl:model.base,model:'test-model',vision:true,maxSteps:10});app.store.state.bots[0].autoApproveLinux=true;
+  let calls=0;app.computers.guest=async(_bot,route)=>{if(route.startsWith('/screenshot'))return Buffer.from('desktop');calls++;return {ok:true};};const chat={id:crypto.randomUUID(),botId:'blot',title:'test',messages:[]};app.store.state.chats.push(chat);
+  try {const run=app.agent.start(chat.id,'Inspect the desktop.');await wait(()=>run.status==='paused');assert.equal(calls,10);assert.match(run.error,/10-turn budget/);assert.equal(run.resumable,true);}
   finally {await app.close();await model.close();}
 });
 

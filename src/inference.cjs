@@ -25,6 +25,11 @@ async function models(settings) {
 async function complete(settings, messages, tools, signal, onDelta) {
   const effort = settings.reasoningEffort || '';
   if (effort && !reasoningOptions(settings.model).includes(effort)) throw new Error('This reasoning level is not supported by the selected model. Choose Model default.');
+  const startedAt = performance.now();
+  const measured = answer => {
+    const elapsedMs = performance.now() - startedAt, outputTokens = answer.usage?.completion_tokens;
+    return { ...answer, performance: { elapsedMs, outputTokens, tokensPerSecond: Number.isFinite(outputTokens) && elapsedMs > 0 ? outputTokens * 1000 / elapsedMs : null } };
+  };
   const res = await fetch(localBase(settings.baseUrl) + '/chat/completions', {
     method: 'POST', redirect: 'error', signal,
     headers: { 'Content-Type': 'application/json', ...(settings.apiKey ? { Authorization: `Bearer ${settings.apiKey}` } : {}) },
@@ -39,7 +44,7 @@ async function complete(settings, messages, tools, signal, onDelta) {
     const message = data.choices?.[0]?.message;
     if (!message) throw new Error('The model server returned no answer.');
     if (message.content) onDelta(message.content);
-    return { ...message, usage: data.usage, finishReason: data.choices[0].finish_reason };
+    return measured({ ...message, usage: data.usage, finishReason: data.choices[0].finish_reason });
   }
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
@@ -76,7 +81,7 @@ async function complete(settings, messages, tools, signal, onDelta) {
     buffer += decoder.decode();
     if (buffer.trim()) consume(buffer.trim());
   } finally { reader.releaseLock(); }
-  return { role: 'assistant', content: content || null, ...(reasoning ? { reasoning_content: reasoning } : {}), ...(calls.size ? { tool_calls: [...calls.values()] } : {}), usage, finishReason };
+  return measured({ role: 'assistant', content: content || null, ...(reasoning ? { reasoning_content: reasoning } : {}), ...(calls.size ? { tool_calls: [...calls.values()] } : {}), usage, finishReason });
 }
 
 async function unloadModels(settings, modelIds) {
@@ -91,6 +96,5 @@ async function unloadModels(settings, modelIds) {
   const data = await response.json();
   if (!response.ok || data.unloaded !== true) throw new Error(data.error?.message || 'The local model could not be unloaded.');
 }
-
 
 module.exports = { localBase, models, complete, reasoningOptions, unloadModels };

@@ -109,12 +109,17 @@ function renderChat() {
         <div class="control-row" id="control-row"></div>
       </div><div class="activity-panel" id="activity-panel"></div>
     </section>
-    <div class="composer-wrap"><form class="composer" id="composer"><textarea id="prompt" aria-label="Message your bot" placeholder="Message ${esc(bot.name)}…" rows="1"></textarea><div class="composer-bottom"><div class="composer-controls"><label class="composer-select approval-select" title="Action approval">${icon('auto')}<select id="approval-mode" aria-label="Action approval"><option value="ask">Ask before computer and workspace actions</option><option value="auto">Auto-approve computer and workspace actions</option></select></label><label class="composer-select" title="Local model">${icon('model')}<select id="composer-model" aria-label="Model"></select></label><label class="composer-select reasoning-select">${icon('reasoning')}<select id="composer-reasoning" aria-label="Reasoning level"></select></label></div><button class="send-button" id="send" aria-label="Send message">${icon('send')}</button></div></form><div class="composer-caption">Messages and files stay on this Mac</div></div>
+    <div class="composer-wrap"><form class="composer" id="composer"><textarea id="prompt" aria-label="Message your bot" placeholder="Message ${esc(bot.name)}…" rows="1"></textarea><div class="composer-bottom"><div class="composer-controls"><label class="composer-select approval-select" title="Action approval">${icon('auto')}<select id="approval-mode" aria-label="Action approval"><option value="ask">Ask before computer and workspace actions</option><option value="auto">Auto-approve computer and workspace actions</option></select></label><label class="composer-select" title="Local model">${icon('model')}<select id="composer-model" aria-label="Model"></select></label><div class="reasoning-control"><button class="composer-select reasoning-select" id="reasoning-toggle" type="button" aria-label="Reasoning level" aria-expanded="false" aria-controls="reasoning-panel">${icon('reasoning')}</button><div class="control-popover" id="reasoning-panel" hidden><div class="popover-heading"><strong>Reasoning</strong><output id="reasoning-current"></output></div><input id="composer-reasoning" type="range" min="0" max="0" step="1" aria-label="Reasoning level"><div class="reasoning-ticks" id="reasoning-ticks"></div><button type="button" id="reasoning-default">Use model default</button></div></div></div><div class="composer-right"><div class="context-control"><button type="button" class="context-meter" id="context-toggle" aria-label="Context usage" aria-expanded="false" aria-controls="context-panel"><svg viewBox="0 0 32 19" aria-hidden="true"><path class="context-track" d="M3 16a13 13 0 0 1 26 0"/><path id="context-fill" d="M3 16a13 13 0 0 1 26 0" pathLength="100"/></svg><span id="context-percent">—</span></button><div class="control-popover" id="context-panel" hidden><strong id="context-amount">Context usage</strong><p id="context-description"></p><button type="button" id="compact-context">Compact context</button><small id="compact-status"></small></div></div><button class="send-button" id="send" aria-label="Send message">${icon('send')}</button></div></div></form><div class="composer-caption">Messages and files stay on this Mac</div></div>
   </div>`;
   setupPaneResize();
   $('#approval-mode').onchange = event => action(() => saveAutoApproval(event.target.value === 'auto'));
   $('#composer-model').onchange = event => action(() => saveComposerSettings({ model: event.target.value }));
-  $('#composer-reasoning').onchange = event => action(() => saveComposerSettings({ reasoningEffort: event.target.value }));
+  $('#reasoning-toggle').onclick = () => togglePopover('reasoning');
+  $('#context-toggle').onclick = () => togglePopover('context');
+  $('#composer-reasoning').oninput = event => describeReasoning(Number(event.target.value));
+  $('#composer-reasoning').onchange = event => action(() => saveComposerSettings({ reasoningEffort: reasoningChoices()[Number(event.target.value)].value }));
+  $('#reasoning-default').onclick = () => action(() => saveComposerSettings({ reasoningEffort: '' }));
+  $('#compact-context').onclick = () => action(async () => { await api('/api/compact', { chatId }); await refresh(); });
   updateComposerControls();
   $('#toggle-chat').onclick = () => setChatOpen(!chatOpen);
   $('#close-computer').onclick = () => action(async () => { const button = $('#close-computer'); button.dataset.closing = 'true'; button.disabled = true; destroyScreen(); try { await api('/api/computer/stop', { botId: selectedBot }); screenError = ''; await refresh(); } finally { delete button.dataset.closing; if (button.isConnected) updateComputer(); } });
@@ -173,7 +178,34 @@ function setupPaneResize() {
   paneObserver = new ResizeObserver(describe); paneObserver.observe(layout); paneObserver.observe($('#computer-pane')); describe();
 }
 const modelLabel = id => ({ 'incoai/Qwen3.6-35B-A3B-Splash': 'Splash 35B · A3B', 'incoai/Qwen3.8-27B-Splash': 'Splash 27B', 'audreyt/Qwen3.8-27B-Splash-abliterated': 'Splash 27B · Abliterated' }[id] || id.split('/').at(-1));
-const reasoningLabels = { '': 'Model default', none: 'Off', low: 'Low', medium: 'Medium', xhigh: 'High' };
+const reasoningLabels = { '': 'Model default', none: 'Off', low: 'Low', medium: 'Medium', xhigh: 'X-high' };
+function reasoningChoices() {
+  const available = modelList.find(m => m.id === state.settings.model)?.reasoning || [];
+  if (available.includes('xhigh')) return available.map(value => ({ value, label: reasoningLabels[value] }));
+  return available.includes('none') ? [{ value: 'none', label: 'Off' }, { value: '', label: 'On' }] : [];
+}
+function describeReasoning(index) {
+  const choice = reasoningChoices()[index];
+  $('#reasoning-current').textContent = choice?.label || 'Model default';
+  $('#composer-reasoning').setAttribute('aria-valuetext', choice?.label || 'Model default');
+}
+function togglePopover(name) {
+  const panel = $('#' + name + '-panel'); panel.hidden = !panel.hidden;
+  $('#' + name + '-toggle').setAttribute('aria-expanded', String(!panel.hidden));
+}
+function updateContextMeter() {
+  const run = currentRun(), budget = run?.contextBudget || state.settings.contextTokens || 65536, used = run?.contextTokens;
+  const known = Number.isFinite(used), percent = known ? Math.min(100, Math.round(used / budget * 100)) : 0;
+  $('#context-fill').style.strokeDasharray = `${percent} 100`;
+  $('#context-percent').textContent = known ? `${percent}%` : '—';
+  $('#context-toggle').title = known ? `${run.contextEstimated ? 'Estimated' : 'Reported'} context: ${used.toLocaleString()} / ${budget.toLocaleString()} tokens` : 'Context usage appears after a task starts';
+  $('#context-toggle').setAttribute('aria-label', known ? `Context usage: ${percent} percent` : 'Context usage');
+  $('#context-amount').textContent = known ? `${run.contextEstimated ? '≈ ' : ''}${used.toLocaleString()} / ${budget.toLocaleString()} tokens` : 'No task context yet';
+  $('#context-description').textContent = `Task budget${run?.modelContextLimit ? ` · model maximum ${run.modelContextLimit.toLocaleString()}` : ''}. ${run?.contextEstimated ? 'Text estimate; image tokens may add more.' : 'Usage reported by the model server.'} Compact keeps a summary and recent work; older detail can be lost.`;
+  $('#compact-context').disabled = !currentChat()?.messages.length || !run || run.compactPending || run.compacting;
+  $('#compact-context').textContent = run?.compacting ? 'Compacting…' : run?.compactPending ? 'Queued after this step' : 'Compact context';
+  $('#compact-status').textContent = run?.compactError || (run?.compactPending && !run.compacting ? 'The current reasoning/action round will finish first.' : run?.compactions ? `Compacted ${run.compactions} time${run.compactions === 1 ? '' : 's'}` : '');
+}
 function updateComposerControls() {
   if (!$('#composer-model')) return;
   const model = state.settings.model, effort = state.settings.reasoningEffort || '';
@@ -183,11 +215,22 @@ function updateComposerControls() {
   if ($('#composer-model').dataset.signature !== signature) {
     $('#composer-model').dataset.signature = signature;
     $('#composer-model').innerHTML = values.length ? values.map(id => `<option value="${esc(id)}" ${id === model ? 'selected' : ''}>${esc(modelLabel(id))}</option>`).join('') : '<option value="">No local model</option>';
-    $('#composer-reasoning').innerHTML = ['', ...available].map(value => `<option value="${value}" ${value === effort ? 'selected' : ''}>${reasoningLabels[value]}</option>`).join('');
+    const choices = reasoningChoices();
+    $('#composer-reasoning').max = String(Math.max(0, choices.length - 1));
+    $('#reasoning-ticks').innerHTML = choices.map((choice, index) => `<span style="left:${choices.length > 1 ? index / (choices.length - 1) * 100 : 0}%">${choice.label}</span>`).join('');
   }
-  if (!composerSaving) { $('#composer-model').value = model; $('#composer-reasoning').value = effort; }
+  if (!composerSaving) {
+    $('#composer-model').value = model;
+    const choices = reasoningChoices(), effective = effort || (available.includes('xhigh') ? 'xhigh' : '');
+    $('#composer-reasoning').value = String(Math.max(0, choices.findIndex(choice => choice.value === effective)));
+    describeReasoning(Number($('#composer-reasoning').value));
+  }
   $('#composer-model').disabled = composerSaving || !values.length;
   $('#composer-reasoning').disabled = composerSaving || !available.length;
+  $('#reasoning-toggle').disabled = !available.length;
+  $('#reasoning-default').disabled = composerSaving || !available.length;
+  $('#reasoning-default').textContent = 'Use model default' + (available.includes('xhigh') ? ' (X-high)' : available.includes('none') ? ' (On)' : '');
+  updateContextMeter();
   $('.reasoning-select').title = available.length ? 'Reasoning for the next task · Off skips thinking; higher levels may take longer' : 'Reasoning support is unverified for this model; its default is used';
   const auto = currentBot().autoApproveLinux === true;
   $('#approval-mode').value = auto ? 'auto' : 'ask';
@@ -195,7 +238,7 @@ function updateComposerControls() {
   $('.approval-select').dataset.auto = String(auto);
   $('.approval-select').title = auto ? 'Action approval: Auto · Computer actions and workspace file writes run without prompts' : 'Action approval: Ask · Review computer actions and workspace file writes before they run';
   $('#composer-model').parentElement.title = $('#composer-model').title = 'Model: ' + modelLabel(model || 'No local model');
-  $('.reasoning-select').title = available.length ? 'Reasoning: ' + reasoningLabels[effort] + (available.includes('low') ? ' · Higher levels may take longer' : ' · Model default enables thinking; Off skips it') : 'Reasoning: Model default · This model has no verified reasoning control';
+  $('.reasoning-select').title = available.length ? 'Reasoning: ' + ($('#reasoning-current').textContent) + (!effort ? ' · Model default' : '') : 'Reasoning: Model default · This model has no verified reasoning control';
   $('#send').disabled = pendingSend || composerSaving;
 }
 async function saveAutoApproval(enabled) {
@@ -231,14 +274,14 @@ function renderMessages() {
   if (!$('#messages')) return;
   const bot = currentBot(), chat = currentChat(), run = currentRun(), live = run && isLive(run);
   $('#send').innerHTML = icon(live ? 'stop' : 'send'); $('#send').setAttribute('aria-label', live ? 'Stop task' : 'Send message');
-  const signature = JSON.stringify([chat?.messages, run?.status, run?.draft, run?.activity, run?.approval, run?.error]);
+  const signature = JSON.stringify([chat?.messages, run?.status, run?.draft, run?.activity, run?.approval, run?.error, run?.compacting]);
   if (signature === messagesSignature) return; messagesSignature = signature;
   const element = $('#messages'), nearBottom = element.scrollHeight - element.scrollTop - element.clientHeight < 140;
   if (!chat?.messages.length) {
     element.innerHTML = `<div class="welcome">${avatar(bot, 96)}<h2>What shall we<br><span class="welcome-accent">get done?</span></h2><p>Give ${esc(bot.name)} a task and watch the work next door.</p><div class="starters"><button data-prompt="Search the web for the latest Apple silicon AI tools. Open the most useful sources and summarize them with links.">Research a topic${icon('arrow')}</button><button data-prompt="Help me plan my day. First ask me what I need to get done.">Plan my day${icon('arrow')}</button><button data-prompt="Write a short welcome note for Blots and save it as welcome.md in the workspace.">Write a note${icon('arrow')}</button></div></div>`;
   } else {
-    element.innerHTML = chat.messages.map(m => `<article class="message ${m.role}"><div class="message-label">${m.role === 'assistant' ? avatar(bot) + esc(bot.name) : 'You'}</div><div class="bubble">${m.role === 'user' ? esc(m.content).replaceAll('\n', '<br>') : markdown(m.content)}</div></article>`).join('');
-    if (live) element.innerHTML += `<div class="live-activity"><span class="spinner"></span>${esc(run.status === 'queued' ? 'Queued · waiting for your model' : run.activity)}</div>${run.draft ? `<article class="message assistant"><div class="bubble">${markdown(run.draft)}</div></article>` : ''}`;
+    element.innerHTML = chat.messages.map(m => `<article class="message ${m.role}"><div class="message-label">${m.role === 'assistant' ? avatar(bot) + esc(bot.name) : 'You'}</div><div class="bubble">${m.role === 'user' ? esc(m.content).replaceAll('\n', '<br>') : markdown(m.content)}</div>${m.role === 'assistant' && Number.isFinite(m.metrics?.tokensPerSecond) ? `<small class="response-speed" title="Average output tokens per second, including thinking and tool calls. Includes model load and prompt processing; excludes the app queue.">${m.metrics.tokensPerSecond.toFixed(1)} tok/s</small>` : ''}</article>`).join('');
+    if (live) element.innerHTML += `<div class="live-activity"><span class="spinner"></span>${esc(run.status === 'queued' ? 'Queued · waiting for your model' : run.activity)}</div>${run.draft && !run.compacting ? `<article class="message assistant"><div class="bubble">${markdown(run.draft)}</div></article>` : ''}`;
     if (run?.approval) { element.innerHTML += approvalHTML(run.approval); setChatOpen(true); }
     if (run?.error) element.innerHTML += `<div class="message-error">${esc(run.error)}${['paused', 'failed', 'stopped'].includes(run.status) && (run.resumable || run.steps.length) ? `<br><button class="button small secondary" data-continue="${run.id}">Continue task</button>` : run.status === 'failed' ? '<br><button class="button small secondary" data-retry>Try again</button>' : ''}</div>`;
   }
@@ -339,7 +382,9 @@ function confirmDialog(title, description, callback) { formDialog(title, `<p cla
 function botDialog(bot) {
   formDialog(bot ? 'Make this bot yours.' : 'Meet your next bot.', `<div class="form-grid"><div class="field"><label for="bot-name">Name</label><input id="bot-name" required maxlength="40" value="${esc(bot?.name || '')}" placeholder="Piper"></div><div class="field"><label for="bot-color">Color</label><input id="bot-color" type="color" value="${esc(bot?.color || '#2155ee')}" style="height:43px;padding:5px"></div></div><div class="field"><label for="bot-role">Role</label><input id="bot-role" required maxlength="100" value="${esc(bot?.role || '')}" placeholder="Research assistant"></div><div class="field"><label for="bot-instructions">How should this bot work?</label><textarea id="bot-instructions" required rows="5" maxlength="6000" placeholder="Research carefully, compare sources, and keep answers concise.">${esc(bot?.instructions || '')}</textarea></div>`, async () => { const saved = await api('/api/bots', { ...(bot ? { id: bot.id } : {}), name: $('#bot-name').value, color: $('#bot-color').value, role: $('#bot-role').value, instructions: $('#bot-instructions').value }); await refresh(); await selectBot(saved.id); }, bot ? 'Save bot' : 'Create bot');
 }
+document.addEventListener('keydown', event => { if (event.key === 'Escape') for (const name of ['context', 'reasoning']) if ($('#' + name + '-panel') && !$('#' + name + '-panel').hidden) togglePopover(name); });
 document.addEventListener('click', event => {
+  for (const name of ['context', 'reasoning']) if ($('#' + name + '-panel') && !$('#' + name + '-panel').hidden && !event.target.closest('.' + name + '-control')) togglePopover(name);
   const element = event.target.closest('button,a'); if (!element) return;
   if (element.dataset.view) showView(element.dataset.view);
   if (element.dataset.bot) action(() => selectBot(element.dataset.bot));

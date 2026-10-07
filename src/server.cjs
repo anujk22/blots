@@ -107,6 +107,7 @@ async function createServer(options = {}) {
         }
         if (route === '/api/message' && method === 'POST') { const data = await body(req); return json(res, agent.start(data.chatId, text(data.text, 'Message'), data.tools !== false)); }
         if (route === '/api/resume' && method === 'POST') { const data = await body(req); return json(res, agent.resume(data.runId)); }
+        if (route === '/api/compact' && method === 'POST') { const data = await body(req); return json(res, agent.compact(data.chatId)); }
         if (route === '/api/stop' && method === 'POST') { const data = await body(req); return json(res, { stopped: agent.stop(data.runId) }); }
         if (route === '/api/stop-all' && method === 'POST') { for (const runId of agent.active.keys()) agent.stop(runId); return json(res, { ok: true }); }
         if (route === '/api/approve' && method === 'POST') { const data = await body(req); agent.approve(data.id, data.allow === true); return json(res, { ok: true }); }
