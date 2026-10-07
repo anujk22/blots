@@ -25,7 +25,7 @@ function markdown(text) {
   return doc.body.innerHTML;
 }
 
-let state, selectedBot = localStorage.getItem('blots.bot') || 'blot', chatId = localStorage.getItem('blots.chat') || '', view = 'chat', selectedScreen = 1, modelList = [], connectionError = '', rfb, rfbKey = '', screenError = '', full = false, pollBusy = false, messagesSignature = '', listsSignature = '', pendingSend = false, toastTimer, filePath = '.', fileContent;
+let state, selectedBot = localStorage.getItem('blots.bot') || 'blot', chatId = localStorage.getItem('blots.chat') || '', view = 'chat', selectedScreen = 1, modelList = [], connectionError = '', rfb, rfbKey = '', screenError = '', full = false, chatOpen = false, pollBusy = false, messagesSignature = '', listsSignature = '', pendingSend = false, toastTimer, filePath = '.', fileContent;
 const isLive = run => ['running', 'waiting', 'queued'].includes(run.status);
 const currentBot = () => state.bots.find(b => b.id === selectedBot) || state.bots[0];
 const currentChat = () => state.chats.find(c => c.id === chatId && c.botId === selectedBot);
@@ -71,24 +71,53 @@ function showView(next) {
   if (view === 'activity') { $('#main').innerHTML = `<section class="page"><div class="page-header"><div><h1>Activity</h1><p>What your bots have done, and what needs you.</p></div></div><button class="button secondary small" id="stop-all" style="margin-bottom:20px">Stop all tasks</button><div id="all-activity"></div></section>`; renderAllActivity(); $('#stop-all').onclick = () => action(async () => { await api('/api/stop-all', {}); await refresh(); }); }
 }
 async function selectBot(value) {
-  selectedBot = value; selectedScreen = 1; screenError = ''; localStorage.setItem('blots.bot', value);
+  selectedBot = value; selectedScreen = 1; chatOpen = false; screenError = ''; localStorage.setItem('blots.bot', value);
   chatId = state.chats.find(c => c.botId === value)?.id || ''; localStorage.setItem('blots.chat', chatId); showView('chat');
 }
 async function newChat() {
+  chatOpen = true;
   const chat = await api('/api/chats', { botId: selectedBot }); chatId = chat.id; localStorage.setItem('blots.chat', chatId); await refresh(); showView('chat'); $('#prompt')?.focus();
 }
 function renderChat() {
   const bot = currentBot();
-  $('#main').innerHTML = `<div class="chat-layout"><section class="chat-pane"><div class="pane-header"><div class="pane-person">${avatar(bot)}<div><h1>${esc(bot.name)}</h1><small>${esc(bot.role)}</small></div></div><div class="pane-actions"><button class="icon-button" id="edit-bot" title="Edit bot" aria-label="Edit bot">${icon('settings')}</button><button class="icon-button" id="new-chat" title="New conversation" aria-label="New conversation">${icon('plus')}</button><button class="icon-button" id="delete-chat" title="Delete conversation" aria-label="Delete conversation">${icon('trash')}</button></div></div><div class="messages" id="messages"></div><div class="composer-wrap"><form class="composer" id="composer"><textarea id="prompt" aria-label="Message your bot" placeholder="Message ${esc(bot.name)}…" rows="2"></textarea><div class="composer-bottom"><label class="tool-toggle"><input type="checkbox" id="tools-toggle" checked> Allow tools</label><button class="send-button" id="send" aria-label="Send message">${icon('send')}</button></div></form><div class="composer-caption">Your model. Your memory. Your Mac.</div></div></section><section class="computer-pane" id="computer-pane"><div class="computer-top"><div class="computer-title">${icon('monitor')}<span>${esc(bot.name)}’s computer</span></div><div class="tab-row"><button id="computer-tab" class="selected">Computer</button><button id="activity-tab">Activity</button><button class="icon-button" id="expand-computer" title="Expand computer" aria-label="Expand computer">${icon('expand')}</button></div></div><div class="computer-work" id="computer-work"><form class="address-bar" id="address-bar" hidden><input id="address" aria-label="Search or enter an address" placeholder="Search the web or enter an address"><button class="button small" title="Go">${icon('arrow')}</button></form><div class="computer-bezel"><span class="desktop-tag" id="desktop-tag">Local desktop</span><div class="screen-host" id="screen-host"></div></div><div class="screen-previews">${[1, 2, 3, 4].map(n => `<button class="preview ${n === selectedScreen ? 'selected' : ''}" data-screen="${n}" aria-label="Screen ${n}"><div class="preview-image" id="preview-${n}">${avatar(bot)}</div><span class="label">Screen ${n}</span></button>`).join('')}</div><div class="control-row" id="control-row"></div><div class="computer-note">A real Linux desktop, running locally.</div></div><div class="activity-panel" id="activity-panel"></div></section></div>`;
+  $('#main').innerHTML = `<div class="chat-layout ${chatOpen ? 'chat-open' : ''}">
+    <section class="chat-pane" id="chat-pane" aria-label="Conversation" ${chatOpen ? '' : 'hidden'}>
+      <div class="pane-header"><div class="pane-person">${avatar(bot)}<div><h1>${esc(bot.name)}</h1><small>${esc(bot.role)}</small></div></div>
+        <div class="pane-actions"><button class="icon-button" id="edit-bot" title="Edit bot" aria-label="Edit bot">${icon('settings')}</button><button class="icon-button" id="new-chat" title="New conversation" aria-label="New conversation">${icon('plus')}</button><button class="icon-button" id="delete-chat" title="Delete conversation" aria-label="Delete conversation">${icon('trash')}</button><button class="icon-button" id="close-chat" title="Close chat" aria-label="Close chat">${icon('close')}</button></div>
+      </div><div class="messages" id="messages"></div>
+    </section>
+    <section class="computer-pane" id="computer-pane">
+      <div class="computer-top"><div class="computer-title">${icon('monitor')}<span>${esc(bot.name)}’s computer</span></div>
+        <div class="tab-row"><select id="screen-select" aria-label="Computer screen">${[1, 2, 3, 4].map(n => `<option value="${n}" ${n === selectedScreen ? 'selected' : ''}>Desktop ${n}</option>`).join('')}</select><button id="toggle-chat" aria-expanded="${chatOpen}" aria-controls="chat-pane">${icon('chat')} Chat</button><button id="computer-tab" class="selected">Computer</button><button id="activity-tab">Activity</button><button class="icon-button" id="expand-computer" title="Expand computer" aria-label="Expand computer">${icon('expand')}</button></div>
+      </div>
+      <div class="computer-work" id="computer-work">
+        <form class="address-bar" id="address-bar" hidden><input id="address" aria-label="Search or enter an address" placeholder="Search the web or enter an address"><button class="button small" title="Go">${icon('arrow')}</button></form>
+        <div class="computer-bezel"><span class="desktop-tag" id="desktop-tag">On your Mac</span><div class="screen-host" id="screen-host"></div></div>
+        <div class="control-row" id="control-row"></div>
+      </div><div class="activity-panel" id="activity-panel"></div>
+    </section>
+    <div class="composer-wrap"><form class="composer" id="composer"><textarea id="prompt" aria-label="Message your bot" placeholder="Message ${esc(bot.name)}…" rows="1"></textarea><div class="composer-bottom"><label class="tool-toggle"><input type="checkbox" id="tools-toggle" checked> Allow tools</label><button class="send-button" id="send" aria-label="Send message">${icon('send')}</button></div></form><div class="composer-caption">Local model · Private memory · Your computer</div></div>
+  </div>`;
+  $('#toggle-chat').onclick = () => setChatOpen(!chatOpen);
+  $('#close-chat').onclick = () => setChatOpen(false);
+  $('#screen-select').onchange = event => { selectedScreen = Number(event.target.value); destroyScreen(); controlSignature = ''; updateComputer(); };
   $('#composer').onsubmit = event => { event.preventDefault(); action(sendMessage); };
+  $('#prompt').oninput = () => { const input = $('#prompt'); input.style.height = 'auto'; input.style.height = Math.min(input.scrollHeight, 110) + 'px'; if (full) $('#computer-pane').style.bottom = $('.composer-wrap').getBoundingClientRect().height + 'px'; };
   $('#prompt').onkeydown = event => { if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); action(sendMessage); } };
   $('#new-chat').onclick = () => action(newChat); $('#edit-bot').onclick = () => botDialog(bot);
   $('#delete-chat').onclick = () => { if (currentChat()) confirmDialog('Delete this conversation?', 'This removes its messages and activity from Blots.', async () => { await api('/api/chats/delete', { id: chatId }); chatId = ''; await refresh(); showView('chat'); }); };
-  $('#expand-computer').onclick = () => { full = !full; $('#computer-pane').classList.toggle('computer-full', full); $('#expand-computer').innerHTML = icon(full ? 'close' : 'expand'); if (rfb) rfb.scaleViewport = true; };
+  $('#expand-computer').onclick = () => { full = !full; $('#computer-pane').classList.toggle('computer-full', full); $('#computer-pane').style.bottom = full ? $('.composer-wrap').getBoundingClientRect().height + 'px' : ''; $('#expand-computer').innerHTML = icon(full ? 'close' : 'expand'); $('#expand-computer').setAttribute('aria-label', full ? 'Collapse computer' : 'Expand computer'); if (rfb) rfb.scaleViewport = true; };
   $('#computer-tab').onclick = () => { $('#activity-panel').classList.remove('visible'); $('#computer-work').style.display = 'flex'; $('#computer-tab').classList.add('selected'); $('#activity-tab').classList.remove('selected'); };
   $('#activity-tab').onclick = () => { $('#activity-panel').classList.add('visible'); $('#computer-work').style.display = 'none'; $('#computer-tab').classList.remove('selected'); $('#activity-tab').classList.add('selected'); };
   $('#address-bar').onsubmit = event => { event.preventDefault(); action(async () => { toast('Opening page…'); await api('/api/computer/navigate', { botId: selectedBot, screen: selectedScreen, url: $('#address').value }); toast('Page opened'); }); };
   messagesSignature = ''; renderMessages(); updateComputer(); renderActivity();
+}
+function setChatOpen(open) {
+  chatOpen = open;
+  $('.chat-layout')?.classList.toggle('chat-open', open);
+  if ($('#chat-pane')) $('#chat-pane').hidden = !open;
+  $('#toggle-chat')?.setAttribute('aria-expanded', String(open));
+  if (open && $('#messages')) $('#messages').scrollTop = $('#messages').scrollHeight;
 }
 async function sendMessage() {
   if (pendingSend) return;
@@ -98,7 +127,7 @@ async function sendMessage() {
   pendingSend = true; $('#send').disabled = true;
   try {
     if (!currentChat()) { const chat = await api('/api/chats', { botId: selectedBot }); chatId = chat.id; localStorage.setItem('blots.chat', chatId); }
-    await api('/api/message', { chatId, text, tools: $('#tools-toggle').checked }); prompt.value = ''; await refresh();
+    await api('/api/message', { chatId, text, tools: $('#tools-toggle').checked }); prompt.value = ''; prompt.style.height = ''; setChatOpen(true); await refresh();
   } finally { pendingSend = false; if ($('#send')) $('#send').disabled = false; }
 }
 function renderMessages() {
@@ -109,11 +138,11 @@ function renderMessages() {
   if (signature === messagesSignature) return; messagesSignature = signature;
   const element = $('#messages'), nearBottom = element.scrollHeight - element.scrollTop - element.clientHeight < 140;
   if (!chat?.messages.length) {
-    element.innerHTML = `<div class="welcome">${avatar(bot)}<div class="eyebrow">MEET ${esc(bot.name)}</div><h2>What shall we<br>get done?</h2><p>${esc(bot.role)}. Give me a task, and watch the work happen next door.</p><div class="starters"><button data-prompt="Search the web for the latest Apple silicon AI tools. Open the most useful sources and summarize them with links.">Find something worth knowing${icon('arrow')}</button><button data-prompt="Help me plan my day. First ask me what I need to get done.">Make a plan for today${icon('arrow')}</button><button data-prompt="Write a short welcome note for Blots and save it as welcome.md in the workspace.">Write something & save it${icon('arrow')}</button></div></div>`;
+    element.innerHTML = `<div class="welcome">${avatar(bot)}<div class="eyebrow">MEET ${esc(bot.name)}</div><h2>What shall we<br>get done?</h2><p>${esc(bot.role)}. Give me a task, and watch the work happen on my computer.</p><div class="starters"><button data-prompt="Search the web for the latest Apple silicon AI tools. Open the most useful sources and summarize them with links.">Find something worth knowing${icon('arrow')}</button><button data-prompt="Help me plan my day. First ask me what I need to get done.">Make a plan for today${icon('arrow')}</button><button data-prompt="Write a short welcome note for Blots and save it as welcome.md in the workspace.">Write something & save it${icon('arrow')}</button></div></div>`;
   } else {
     element.innerHTML = chat.messages.map(m => `<article class="message ${m.role}"><div class="message-label">${m.role === 'assistant' ? avatar(bot) + esc(bot.name) : 'You'}</div><div class="bubble">${m.role === 'user' ? esc(m.content).replaceAll('\n', '<br>') : markdown(m.content)}</div></article>`).join('');
     if (live) element.innerHTML += `<div class="live-activity"><span class="spinner"></span>${esc(run.status === 'queued' ? 'Queued · waiting for your model' : run.activity)}</div>${run.draft ? `<article class="message assistant"><div class="bubble">${markdown(run.draft)}</div></article>` : ''}`;
-    if (run?.approval) element.innerHTML += approvalHTML(run.approval);
+    if (run?.approval) { element.innerHTML += approvalHTML(run.approval); setChatOpen(true); }
     if (run?.error) element.innerHTML += `<div class="message-error">${esc(run.error)}${run.status === 'failed' ? '<br><button class="button small secondary" data-retry>Try again</button>' : ''}</div>`;
   }
   if (nearBottom || live) element.scrollTop = element.scrollHeight;
@@ -141,7 +170,7 @@ function updateComputer() {
     }
     if (rfb) rfb.viewOnly = !isControl();
   }
-  $('#desktop-tag').textContent = computer ? 'Live · local Linux' : 'Local desktop';
+  $('#desktop-tag').textContent = computer ? 'Live · on your Mac' : 'On your Mac';
   const signature = `${!!computer}:${isControl()}:${selectedScreen}`;
   if (signature !== controlSignature || !$('#control-row').children.length) {
     controlSignature = signature;
@@ -150,26 +179,12 @@ function updateComputer() {
     if ($('#stop-computer')) $('#stop-computer').onclick = () => action(async () => { await api('/api/computer/stop', { botId: selectedBot }); destroyScreen(); await refresh(); });
   }
   $('#address-bar').hidden = !computer || !isControl();
-  for (const preview of document.querySelectorAll('[data-screen]')) preview.classList.toggle('selected', Number(preview.dataset.screen) === selectedScreen);
+  $('#screen-select').value = String(selectedScreen);
 }
 async function startComputer() {
   screenError = ''; const button = $('#start-computer'); if (button) { button.disabled = true; button.textContent = 'Starting…'; }
-  try { await api('/api/computer/start', { botId: selectedBot }); await refresh(); await refreshPreviews(); }
+  try { await api('/api/computer/start', { botId: selectedBot }); await refresh(); }
   catch (error) { screenError = error.message; await refresh(); }
-}
-let previewsBusy = false;
-const previewURLs = new Map();
-async function refreshPreviews() {
-  if (view !== 'chat' || !currentComputer() || previewsBusy || document.hidden) return;
-  previewsBusy = true; const botId = selectedBot;
-  try {
-    await Promise.all([1, 2, 3, 4].map(async screen => {
-      const response = await fetch(`/api/computer/screenshot?botId=${encodeURIComponent(botId)}&screen=${screen}`, { headers: { 'X-Blots': '1' } });
-      if (!response.ok) return; const blob = await response.blob(); if (selectedBot !== botId || !$('#preview-' + screen)) return;
-      const key = `${botId}:${screen}`; if (previewURLs.has(key)) URL.revokeObjectURL(previewURLs.get(key));
-      const url = URL.createObjectURL(blob); previewURLs.set(key, url); $('#preview-' + screen).innerHTML = `<img class="preview-image" src="${url}" alt="Screen ${screen} preview">`;
-    }));
-  } finally { previewsBusy = false; }
 }
 function runHTML(run) {
   return `<article class="activity-card"><h3>${esc(run.title)}</h3><span class="status ${run.status}">${esc(run.status)}</span><small>${esc(state.bots.find(b => b.id === run.botId)?.name || 'Bot')} · ${date(run.startedAt)}${run.tokens ? ` · ${run.tokens.toLocaleString()} tokens` : ''}</small>${run.error ? `<p class="message-error">${esc(run.error)}</p>` : ''}${run.steps.length ? `<div class="steps">${run.steps.map(step => `<div class="step">${step.status === 'done' ? '✓' : step.status === 'failed' ? '!' : '·'} ${esc(humanTool(step.tool))}<details><summary>Details</summary><pre>${esc(JSON.stringify(step.args || {}, null, 2))}\n\n${esc(step.result || '')}</pre></details></div>`).join('')}</div>` : ''}<button class="button secondary small" data-open-run="${run.chatId}" style="margin-top:12px">Open conversation</button></article>`;
@@ -222,14 +237,13 @@ document.addEventListener('click', event => {
   const element = event.target.closest('button,a'); if (!element) return;
   if (element.dataset.view) showView(element.dataset.view);
   if (element.dataset.bot) action(() => selectBot(element.dataset.bot));
-  if (element.dataset.chat) { chatId = element.dataset.chat; localStorage.setItem('blots.chat', chatId); showView('chat'); }
+  if (element.dataset.chat) { chatOpen = true; chatId = element.dataset.chat; localStorage.setItem('blots.chat', chatId); showView('chat'); }
   if (element.dataset.prompt) { $('#prompt').value = element.dataset.prompt; $('#prompt').focus(); }
   if (element.dataset.approve || element.dataset.deny) action(async () => { await api('/api/approve', { id: element.dataset.approve || element.dataset.deny, allow: !!element.dataset.approve }); await refresh(); });
   if ('retry' in element.dataset) { const previous = [...(currentChat()?.messages || [])].reverse().find(m => m.role === 'user'); if (previous) { $('#prompt').value = previous.content; action(sendMessage); } }
-  if (element.dataset.screen) { selectedScreen = Number(element.dataset.screen); destroyScreen(); controlSignature = ''; updateComputer(); }
-  if (element.dataset.openRun) { const chat = state.chats.find(c => c.id === element.dataset.openRun); if (chat) { selectedBot = chat.botId; chatId = chat.id; showView('chat'); } }
+  if (element.dataset.openRun) { const chat = state.chats.find(c => c.id === element.dataset.openRun); if (chat) { selectedBot = chat.botId; chatId = chat.id; chatOpen = true; showView('chat'); } }
   if (element.dataset.deleteNote) confirmDialog('Delete this memory?', 'Your bots will no longer receive this saved fact.', async () => { await api('/api/notes/delete', { id: element.dataset.deleteNote }); await refresh(); renderMemory(); });
-  if (element.dataset.routine) action(async () => { const result = await api('/api/routines/action', { id: element.dataset.routine, action: element.dataset.action }); await refresh(); if (result.chatId) { const chat = state.chats.find(c => c.id === result.chatId); selectedBot = chat.botId; chatId = chat.id; showView('chat'); } else renderRoutines(); });
+  if (element.dataset.routine) action(async () => { const result = await api('/api/routines/action', { id: element.dataset.routine, action: element.dataset.action }); await refresh(); if (result.chatId) { const chat = state.chats.find(c => c.id === result.chatId); selectedBot = chat.botId; chatId = chat.id; chatOpen = true; showView('chat'); } else renderRoutines(); });
   if (element.dataset.file) { filePath = filePath === '.' ? element.dataset.file : filePath + '/' + element.dataset.file; renderFiles(); }
   if ('closeDialog' in element.dataset) $('#dialog').close();
   if (element.dataset.browse) { event.preventDefault(); action(async () => { if (!currentComputer()) await startComputer(); await api('/api/computer/control', { botId: selectedBot, screen: selectedScreen, on: true }); await refresh(); if (view !== 'chat') showView('chat'); await api('/api/computer/navigate', { botId: selectedBot, screen: selectedScreen, url: element.dataset.browse }); }); }
@@ -240,4 +254,4 @@ window.blotsDesktop?.onNewChat(() => action(newChat));
 await refresh();
 if (state) { showView('chat'); await refreshModels(); }
 async function poll() { await refresh(); setTimeout(poll, document.hidden ? 5000 : state?.runs.some(isLive) ? 700 : 2000); }
-setTimeout(poll, 1000); setInterval(refreshModels, 30000); setInterval(() => refreshPreviews().catch(() => {}), 6000);
+setTimeout(poll, 1000); setInterval(refreshModels, 30000);

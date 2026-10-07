@@ -1,6 +1,6 @@
 # Blots
 
-**Your own little team.** A blue, local AI desktop app for Apple silicon Macs. Each bot has its own persistent Linux computer with four live screens. Chat beside the computer, watch it research, or take over its mouse and keyboard.
+**Your own little team.** An OLED-black local AI desktop app with blue accents, built for Apple silicon Macs. Each bot has its own persistent Linux computer. A single live desktop takes center stage; extra desktops are available in the compact screen picker. Chat beside the computer, watch it research, or take over its mouse and keyboard.
 
 Blots is independently built software, not a fork of Bops. There is no Blots account, inference subscription, telemetry, or hosted backend. Inference and app data stay on your Mac. Web research connects to the websites you ask your bots to visit.
 
@@ -43,8 +43,8 @@ The desktop is built locally and unsigned for distribution; it is not a notarize
 - Multiple named bots with editable roles, instructions, and colors. Bots can delegate tasks to teammates; delegated tasks appear in their own conversations and use the same local inference queue.
 - Persistent conversations with streamed local model responses.
 - Live web search, real browser navigation, page reading, and numbered browser actions. Research bots can open sources and cite URLs; no paid search API is needed.
-- A real Linux computer per bot: Chromium, terminal, file manager, and text editor. Four independent screens, browser profiles, and persistent home directories.
-- Live VNC viewing, screen previews, expansion, and mouse/keyboard takeover. Agent tools wait while you have control of their screen.
+- A real Linux computer per bot: Chromium, terminal, file manager, and text editor. Four independent desktops available through a compact picker, persistent browser profiles, and persistent home directories.
+- Live VNC viewing, expansion, and mouse/keyboard takeover, with chat in a collapsible side panel and the composer below the computer. Agent tools wait while you have control of their screen.
 - Local workspace listing, reading, file creation/editing, and downloads. File writes, saved memories, browser clicks/typing, and Linux commands come to you for review.
 - Durable local memory shared among bots, managed by you.
 - Scheduled routines, created in the app or requested in chat, while the app is open. Results appear in their own conversations; reviewed actions still wait for you.
