@@ -21,7 +21,10 @@ function createComputers(store) {
       try { await runDocker(['info', '--format', '{{.ServerVersion}}'], 10000); return; }
       catch {
         if (process.platform !== 'darwin' || !fs.existsSync('/Applications/Docker.app')) throw new Error('Install Docker Desktop before starting a Linux computer.');
-        // The Docker Desktop CLI starts the engine headlessly; older installs without it fall back to a hidden app launch.
+        // Docker Desktop opens its dashboard on every launch (sometimes a minute in) and its setting lives where apps can't write.
+        // Hiding it like Cmd-H needs no permission; one small process keeps doing so while the launch settles.
+        execFile('/usr/bin/osascript', ['-l', 'JavaScript', '-e', "ObjC.import('AppKit'); for (let i = 0; i < 450; i++) { $.NSRunningApplication.runningApplicationsWithBundleIdentifier('com.electron.dockerdesktop').js.forEach(app => app.hide); delay(0.2); }"], { timeout: 95000 }, () => {}).unref();
+        // The Docker Desktop CLI starts the engine; older installs without it fall back to a background app launch.
         try { await runDocker(['desktop', 'start', '--detach'], 15000); }
         catch { await exec('/usr/bin/open', ['-g', '-j', '-a', '/Applications/Docker.app']); }
         for (let i = 0; i < 80; i++) {
@@ -45,6 +48,7 @@ function createComputers(store) {
     fs.renameSync(file + '.tmp', file);
   }
   async function ensure(botId) {
+    await swept;
     if (closing || stopping.has(botId)) throw new Error('The computer is closing.');
     if (starting.has(botId)) return starting.get(botId);
     if (computers.has(botId)) return computers.get(botId);
@@ -67,7 +71,7 @@ function createComputers(store) {
       if (!container) {
         const home = path.join(store.dataDir, 'computers', botId);
         const args = ['run', '-d', '--name', name(botId), '--label', 'app=blots', '--memory', `${memory}m`, '--cpus', String(cpus), '--shm-size', '512m', '--log-opt', 'max-size=5m', '--log-opt', 'max-file=2', '--security-opt', 'no-new-privileges', '-e', `TZ=${Intl.DateTimeFormat().resolvedOptions().timeZone}`, '-v', `${home}:/home/blots`, '-v', `${store.workspace}:/workspace`];
-        for (const port of [8766, 5901, 5902, 5903, 5904, 9231, 9232, 9233, 9234]) args.push('-p', `127.0.0.1::${port}`);
+        for (const port of [8766, 5901, 9231]) args.push('-p', `127.0.0.1::${port}`);
         args.push(IMAGE); await runDocker(args);
         container = JSON.parse((await runDocker(['inspect', name(botId)])).stdout)[0];
       }
@@ -78,7 +82,7 @@ function createComputers(store) {
       }
       const ports = {};
       for (const [key, bindings] of Object.entries(container.NetworkSettings.Ports)) if (bindings?.length) ports[parseInt(key)] = Number(bindings[0].HostPort);
-      const entry = { botId, ports, screens: new Set([1]), startingScreens: new Map() };
+      const entry = { botId, ports };
       for (let i = 0; i < 60; i++) {
         try {
           const r = await fetch(`http://127.0.0.1:${ports[8766]}/health`, { signal: AbortSignal.timeout(1000) });
@@ -94,38 +98,19 @@ function createComputers(store) {
     starting.set(botId, job);
     try { return await job; } finally { starting.delete(botId); }
   }
-  async function ensureScreen(botId, screen = 1) {
-    const computer = await ensure(botId);
-    if (computer.screens.has(screen)) return computer;
-    if (computer.startingScreens.has(screen)) return computer.startingScreens.get(screen);
-    const job = (async () => {
-      const response = await fetch(`http://127.0.0.1:${computer.ports[8766]}/screen`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ screen }), signal: AbortSignal.timeout(10000) });
-      if (!response.ok) throw new Error((await response.json()).error || 'The screen did not start.');
-      for (let i = 0; i < 40; i++) {
-        try {
-          const browser = await fetch(`http://127.0.0.1:${computer.ports[9230+screen]}/json/version`, { signal: AbortSignal.timeout(1000) });
-          if (browser.ok) { computer.screens.add(screen); return computer; }
-        } catch {}
-        await new Promise(resolve => setTimeout(resolve, 250));
-      }
-      throw new Error('The screen did not start in time.');
-    })();
-    computer.startingScreens.set(screen, job);
-    try { return await job; } finally { computer.startingScreens.delete(screen); }
-  }
   async function guest(botId, route, data, signal) {
-    const computer = await ensureScreen(botId, Number(data?.screen || new URL(route, 'http://guest').searchParams.get('screen') || 1));
+    const computer = await ensure(botId);
     if (signal?.aborted) throw new Error('Stopped');
     const response = await fetch(`http://127.0.0.1:${computer.ports[8766]}${route}`, { ...(data ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) } : {}), signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(40000)]) : AbortSignal.timeout(40000) });
     if (!response.ok) throw new Error((await response.json()).error || 'Computer request failed.');
     return response.headers.get('content-type').includes('image/') ? Buffer.from(await response.arrayBuffer()) : response.json();
   }
-  async function page(botId, screen = 1, signal) {
-    const computer = await ensureScreen(botId, screen);
+  async function page(botId, signal) {
+    const computer = await ensure(botId);
     if (signal?.aborted) throw new Error('Stopped');
-    const key = `browser${screen}`;
+    const key = 'browser';
     if (!computer[key]) {
-      const port = computer.ports[9230 + screen];
+      const port = computer.ports[9231];
       // Rewrite the browser's loopback websocket address to its forwarded Docker port.
       const version = await (await fetch(`http://127.0.0.1:${port}/json/version`, { signal: AbortSignal.timeout(10000) })).json();
       const ws = new URL(version.webSocketDebuggerUrl); ws.hostname = '127.0.0.1'; ws.port = String(port);
@@ -136,19 +121,17 @@ function createComputers(store) {
     if (signal?.aborted) throw new Error('Stopped');
     return context.pages().find(p => !p.isClosed()) || context.newPage();
   }
-  function takeover(botId, screen, on) {
-    const key = `${botId}:${screen}`;
-    if (on) controls.add(key);
-    else { controls.delete(key); for (const resolve of waiters.get(key) || []) resolve(); waiters.delete(key); }
+  function takeover(botId, on) {
+    if (on) controls.add(botId);
+    else { controls.delete(botId); for (const resolve of waiters.get(botId) || []) resolve(); waiters.delete(botId); }
   }
-  async function waitForControl(botId, screen, signal) {
-    const key = `${botId}:${screen}`;
-    if (!controls.has(key)) return;
+  async function waitForControl(botId, signal) {
+    if (!controls.has(botId)) return;
     await new Promise((resolve, reject) => {
       const done = () => { signal.removeEventListener('abort', abort); resolve(); };
       const abort = () => { signal.removeEventListener('abort', abort); reject(new Error('Stopped')); };
       signal.addEventListener('abort', abort, { once: true });
-      waiters.set(key, [...(waiters.get(key) || []), done]);
+      waiters.set(botId, [...(waiters.get(botId) || []), done]);
     });
   }
   async function stop(botId) {
@@ -157,11 +140,24 @@ function createComputers(store) {
       await starting.get(botId)?.catch(() => {});
       await runDocker(['stop', '--time', '10', name(botId)]);
       computers.delete(botId);
-      for (let screen = 1; screen <= 4; screen++) takeover(botId, screen, false);
+      takeover(botId, false);
     } finally { stopping.delete(botId); }
   }
-  return { ensure, ensureScreen, guest, page, takeover, waitForControl, controls, stop, appearance,
-    status: () => [...computers.keys()].map(botId => ({ botId, status: 'ready', controlled: [1, 2, 3, 4].filter(n => controls.has(`${botId}:${n}`)) })),
+  const running = async () => (await runDocker(['ps', '--filter', 'label=app=blots', '--filter', `name=^/blots-${namespace}-`, '--format', '{{.Names}}'], 10000)).stdout.trim().split('\n').filter(Boolean);
+  // A crash or force quit skips cleanup; stop any desktops it left running. Never launches Docker itself.
+  let swept = Promise.resolve();
+  const sweep = () => swept = (async () => {
+    let orphans; try { orphans = await running(); } catch { return; }
+    if (!orphans.length) return;
+    await Promise.allSettled(orphans.map(n => runDocker(['stop', '--time', '10', n])));
+    runtimeUsed = true; await stopRuntime().catch(() => {});
+  })();
+  async function stopRuntime() {
+    if (!runtimeUsed || process.platform !== 'darwin' || !fs.existsSync('/Applications/Docker.app')) return;
+    if (!(await runDocker(['ps', '-q'], 10000)).stdout.trim()) { await runDocker(['desktop', 'stop', '--timeout', '30'], 45000); runtimeUsed = false; }
+  }
+  return { ensure, guest, page, takeover, waitForControl, controls, stop, appearance,
+    status: () => [...computers.keys()].map(botId => ({ botId, status: 'ready', controlled: controls.has(botId) })),
     starting: () => [...starting.keys()],
     build: async onOutput => {
       await ensureRuntime();
@@ -178,20 +174,17 @@ function createComputers(store) {
     close: async () => {
       closing = true;
       await Promise.allSettled([...starting.values()]);
-      await Promise.allSettled([...computers.values()].flatMap(c => [...c.startingScreens.values()]));
-      let running;
-      try { running = (await runDocker(['ps', '--filter', 'label=app=blots', '--filter', `name=^/blots-${namespace}-`, '--format', '{{.Names}}'], 10000)).stdout.trim().split('\n').filter(Boolean); }
-      catch (error) { if (computers.size) throw error; return; }
-      if (running.length) runtimeUsed = true;
-      const bots = new Set([...computers.keys(), ...running.map(value => value.slice(`blots-${namespace}-`.length))]);
+      await swept; let names;
+      // An unreachable Docker has no running desktops; next launch's sweep catches anything a hung daemon kept.
+      try { names = await running(); }
+      catch { computers.clear(); controls.clear(); return; }
+      if (names.length) runtimeUsed = true;
+      const bots = new Set([...computers.keys(), ...names.map(value => value.slice(`blots-${namespace}-`.length))]);
       const stopped = await Promise.allSettled([...bots].map(stop));
       const errors = stopped.filter(r => r.status === 'rejected').map(r => r.reason.message);
       if (errors.length) throw new Error(errors.join('\n'));
     },
-    stopRuntime: async () => {
-      if (!runtimeUsed || process.platform !== 'darwin' || !fs.existsSync('/Applications/Docker.app')) return;
-      if (!(await runDocker(['ps', '-q'], 10000)).stdout.trim()) { await runDocker(['desktop', 'stop', '--timeout', '30'], 45000); runtimeUsed = false; }
-    },
+    stopRuntime, sweep,
   };
 }
 module.exports = { createComputers, IMAGE };

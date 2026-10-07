@@ -62,13 +62,13 @@ test('cleanup failure keeps the server available for an explicit retry instead o
 });
 
 async function desktopFixture() {
-  const cleanup = deferred(); let cleanupCalls = 0, exits = 0, errors = [];
+  const cleanup = deferred(); let cleanupCalls = 0, exits = 0, errors = [], choice = 2;
   const app = new EventEmitter(); Object.assign(app, { commandLine: { appendSwitch() {} }, setName() {}, requestSingleInstanceLock: () => true, whenReady: () => Promise.resolve(), getPath: () => temp(), quit() { const event = { prevented: false, preventDefault() { this.prevented = true; } }; app.emit('before-quit', event); if (!event.prevented) exits++; } });
   class Window extends EventEmitter { constructor() { super(); this.webContents = new EventEmitter(); Object.assign(this.webContents, { setWindowOpenHandler() {}, session: { setPermissionRequestHandler() {} } }); } loadURL() {} }
-  const backend = { origin: 'http://127.0.0.1:1111', store: { workspace: temp() }, close(options) { assert.equal(options.releaseResources, true); cleanupCalls++; return cleanup.promise; } };
-  const electron = { app, BrowserWindow: Window, Menu: { setApplicationMenu() {}, buildFromTemplate: value => value }, dialog: { showErrorBox: (title, message) => errors.push({ title, message }) }, shell: {}, ipcMain: { handle() {} }, nativeTheme: {} };
-  vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../src/desktop.cjs'), 'utf8'), { __dirname, require: name => name === 'electron' ? electron : name === './server.cjs' ? { createServer: async () => backend } : require(name) });
-  await tick(); return { app, cleanup, cleanupCalls: () => cleanupCalls, exits: () => exits, errors };
+  const backend = { origin: 'http://127.0.0.1:1111', store: { workspace: temp() }, computers: { sweep() {} }, close(options) { assert.equal(options.releaseResources, true); cleanupCalls++; return cleanup.promise; } };
+  const electron = { app, BrowserWindow: Window, Menu: { setApplicationMenu() {}, buildFromTemplate: value => value }, dialog: { showErrorBox: (title, message) => errors.push({ title, message }), showMessageBoxSync: options => { errors.push({ title: options.message, message: options.detail }); return choice; } }, shell: {}, ipcMain: { handle() {} }, nativeTheme: {} };
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../src/desktop.cjs'), 'utf8'), { __dirname, process: { on() {} }, require: name => name === 'electron' ? electron : name === './server.cjs' ? { createServer: async () => backend } : require(name) });
+  await tick(); return { app, cleanup, cleanupCalls: () => cleanupCalls, exits: () => exits, errors, choose: value => { choice = value; } };
 }
 
 test('repeated native Quit requests cannot bypass pending resource cleanup', async () => {
@@ -77,17 +77,18 @@ test('repeated native Quit requests cannot bypass pending resource cleanup', asy
   f.cleanup.resolve(); await tick(); assert.equal(f.exits(), 1); assert.deepEqual(f.errors, []);
 });
 
-test('native Quit remains prevented when resource cleanup rejects', async () => {
+test('failed cleanup asks before quitting, and Quit Anyway always exits', async () => {
   const f = await desktopFixture(); f.app.quit(); f.cleanup.reject(new Error('Unload failed')); await tick();
   assert.equal(f.exits(), 0); assert.equal(f.errors.length, 1); assert.match(f.errors[0].message, /Unload failed/);
+  f.choose(1); f.app.quit(); await tick(); assert.equal(f.exits(), 1);
 });
 
 test('a stale viewer reconnect cannot restart a closed computer', async () => {
   const { WebSocket } = require('ws');
   const app = await createServer({ port: 0, dataDir: temp() }); let started = 0;
-  app.computers.ensureScreen = async () => { started++; throw new Error('Should not start'); };
+  app.computers.ensure = async () => { started++; throw new Error('Should not start'); };
   try {
-    const ws = new WebSocket(app.origin.replace('http', 'ws') + '/vnc?bot=blot&screen=1', { origin: app.origin });
+    const ws = new WebSocket(app.origin.replace('http', 'ws') + '/vnc?bot=blot', { origin: app.origin });
     await new Promise(resolve => { ws.on('error', resolve); });
     assert.equal(started, 0);
   } finally { await app.close(); }

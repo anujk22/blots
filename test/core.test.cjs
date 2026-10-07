@@ -42,12 +42,12 @@ test('workspace paths reject traversal and symlink escapes', () => {
 });
 test('taking over pauses computer actions until hand-back and cancellation unblocks them', async () => {
   const computer = createComputers(createStore(temp()));
-  computer.takeover('blot', 1, true); let resumed = false;
-  const pending = computer.waitForControl('blot', 1, new AbortController().signal).then(() => { resumed = true; });
+  computer.takeover('blot', true); let resumed = false;
+  const pending = computer.waitForControl('blot', new AbortController().signal).then(() => { resumed = true; });
   await new Promise(r => setTimeout(r, 20)); assert.equal(resumed, false);
-  computer.takeover('blot', 1, false); await pending; assert.equal(resumed, true);
-  computer.takeover('blot', 2, true); const controller = new AbortController();
-  const cancelled = computer.waitForControl('blot', 2, controller.signal); controller.abort(); await assert.rejects(cancelled, /Stopped/);
+  computer.takeover('blot', false); await pending; assert.equal(resumed, true);
+  computer.takeover('blot', true); const controller = new AbortController();
+  const cancelled = computer.waitForControl('blot', controller.signal); controller.abort(); await assert.rejects(cancelled, /Stopped/);
 });
 test('stream parser accumulates text and tool call arguments across chunks', async () => {
   const model = await fakeModel(() => ({ content: 'Héllo', tool_calls: [{ index: 0, id: 'call-a', type: 'function', function: { name: 'write_file', arguments: '{"path":"a.md","content":"hello"}' } }] }));
@@ -123,7 +123,7 @@ test('real mouse inputs stay behind approval and require visual tools to be enab
     const run = app.agent.start(chat.id, 'Move the pointer.');
     await wait(() => run.approval); assert.equal(inputs.length, 0);
     app.agent.approve(run.approval.id, true); await wait(() => run.status === 'done');
-    assert.equal(inputs.length, 1); assert.deepEqual(inputs[0].slice(0, 3), ['blot', '/input', { kind: 'move', x: 400, y: 300, screen: 1 }]);
+    assert.equal(inputs.length, 1); assert.deepEqual(inputs[0].slice(0, 3), ['blot', '/input', { kind: 'move', x: 400, y: 300 }]);
   } finally { await app.close(); await model.close(); }
 });
 
@@ -144,7 +144,7 @@ test('opening and searching a page use the visible address bar and accept redire
   for (const [tool, args, address] of [['browser_open', { url: 'https://destination.test/' }, 'https://destination.test/'], ['search_web', { query: 'visible search' }, 'https://www.google.com/search?q=visible%20search']]) {
     calls.length = 0;
     assert.equal((await tools.execute(tool, args, 'blot', new AbortController().signal, visible)).url, 'https://destination.test/redirected');
-    assert.deepEqual(calls, ['front', { kind: 'click', x: 640, y: 140, screen: 1 }, { kind: 'key', key: 'ctrl+a', screen: 1 }, { kind: 'type', text: address, screen: 1 }, 'navigation', { kind: 'key', key: 'Return', screen: 1 }]);
+    assert.deepEqual(calls, ['front', { kind: 'click', x: 640, y: 140 }, { kind: 'key', key: 'ctrl+a' }, { kind: 'type', text: address }, 'navigation', { kind: 'key', key: 'Return' }]);
   }
 });
 
@@ -260,17 +260,17 @@ test('Auto mode respects human takeover and cancellation without executing block
   const chat = { id: crypto.randomUUID(), botId: 'blot', title: 'test', messages: [] }; app.store.state.chats.push(chat);
   try {
     app.agent.setAutoApprove('blot', true);
-    app.computers.takeover('blot', 1, true);
+    app.computers.takeover('blot', true);
     const first = app.agent.start(chat.id, 'Use Linux.');
     await wait(() => first.steps.length); await new Promise(resolve => setTimeout(resolve, 30));
     assert.equal(first.approval, undefined); assert.equal(executed.length, 0);
-    app.computers.takeover('blot', 1, false); await wait(() => first.status === 'done');
+    app.computers.takeover('blot', false); await wait(() => first.status === 'done');
     assert.equal(executed.length, 1);
-    app.computers.takeover('blot', 1, true);
+    app.computers.takeover('blot', true);
     const second = app.agent.start(chat.id, 'Use Linux again.');
     await wait(() => second.steps.length); app.agent.stop(second.id);
     await wait(() => second.status === 'stopped');
-    app.computers.takeover('blot', 1, false);
+    app.computers.takeover('blot', false);
     assert.equal(executed.length, 1);
   } finally { await app.close(); await model.close(); }
 });
@@ -331,8 +331,8 @@ test('unchanged state polls send no body, while drafts and computer control inva
     const updated = await get(tag); assert.equal(updated.status, 200); const next = updated.headers.get('etag'); await updated.json();
     app.store.state.runs[0].draft += ' token';
     const streaming = await get(next); assert.equal(streaming.status, 200); assert.notEqual(streaming.headers.get('etag'), next); await streaming.json();
-    app.computers.status = () => [{ botId: 'blot', status: 'ready', controlled: [1] }];
-    const control = await get(streaming.headers.get('etag')); assert.equal(control.status, 200); assert.deepEqual((await control.json()).computers[0].controlled, [1]);
+    app.computers.status = () => [{ botId: 'blot', status: 'ready', controlled: true }];
+    const control = await get(streaming.headers.get('etag')); assert.equal(control.status, 200); assert.deepEqual((await control.json()).computers[0].controlled, true);
     const disk = fs.readFileSync(path.join(app.store.dataDir, 'state.json'), 'utf8');
     assert.deepEqual(JSON.parse(disk).bots, app.store.state.bots); assert.equal(disk.includes('\n  '), false);
   } finally { await app.close(); }
@@ -416,7 +416,7 @@ test('35B visual grounding converts normalized coordinates without changing 27B 
   const shots=createTools(createStore(temp()),{waitForControl:async()=>{},guest:async(_bot,route)=>{routes.push(route);return Buffer.from('jpeg');}});
   assert.match((await shots.execute('computer_screenshot',{},'blot',undefined,{model})).image,/^data:image\/jpeg;base64,/);
   await shots.execute('computer_screenshot',{},'blot',undefined,{model:'audreyt/Qwen3.8-27B-Splash-abliterated'});
-  assert.deepEqual(routes,['/screenshot?screen=1&format=jpeg&width=1024','/screenshot?screen=1&format=jpeg'],'Only resolution-independent models get downscaled screenshots');
+  assert.deepEqual(routes,['/screenshot?format=jpeg&width=1024','/screenshot?format=jpeg'],'Only resolution-independent models get downscaled screenshots');
   const {reasoningOptions}=require('../src/inference.cjs');assert.deepEqual(reasoningOptions(model),['none']);
 });
 

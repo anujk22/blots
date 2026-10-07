@@ -15,5 +15,5 @@ COPY avatars /opt/blots/avatars/
 RUN chmod +x /opt/blots/start.sh
 USER blots
 WORKDIR /workspace
-EXPOSE 8766 5901 5902 5903 5904 9231 9232 9233 9234
+EXPOSE 8766 5901 9231
 ENTRYPOINT ["/opt/blots/start.sh"]

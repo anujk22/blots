@@ -29,7 +29,6 @@ const definitions = [
   schema('delegate_task', 'Give a task to another bot by name. Its computer work can run concurrently. Tell the user it is queued, not completed. Do not poll for it.', { bot: str('Exact bot name'), task: str('Self-contained task, including necessary context') }, ['bot', 'task']),
   schema('schedule_task', 'Create a recurring task for yourself. Runs while Blots is open. Requires approval.', { title: str('Short routine title'), task: str('Self-contained recurring task'), interval_minutes: { type: 'integer', enum: [15, 60, 360, 1440, 10080] } }, ['title', 'task', 'interval_minutes']),
 ];
-for (const tool of definitions) if (/browser_|search_web|computer_/.test(tool.function.name)) tool.function.parameters.properties.screen = { type: 'integer', minimum: 1, maximum: 4, description: 'Computer screen, 1–4. Default 1.' };
 
 const VISUAL = ['computer_screenshot', 'computer_click', 'computer_move', 'computer_scroll', 'computer_type', 'computer_key'];
 const APPROVAL = ['write_file', 'remember', 'browser_click', 'browser_type', 'computer_exec', 'computer_job_start', 'computer_click', 'computer_move', 'computer_scroll', 'computer_type', 'computer_key', 'schedule_task'];
@@ -70,19 +69,19 @@ function createTools(store, computers, handlers = {}) {
     return pageView(page.url(), data, start, limit);
   }
   // Visible mode drives the address bar with the real pointer and keyboard; direct mode navigates the page.
-  async function navigate(page, url, botId, screen, signal, visible) {
+  async function navigate(page, url, botId, signal, visible) {
     await page.bringToFront();
     if (!visible) return page.goto(url.href, { waitUntil: 'domcontentloaded', timeout: 30000 });
     const point = await page.evaluate(() => {
       const border = (outerWidth-innerWidth*devicePixelRatio)/2;
       return { x: Math.round(screenX+outerWidth/2), y: Math.round(screenY+outerHeight-innerHeight*devicePixelRatio-border-24*devicePixelRatio) };
     });
-    await computers.guest(botId, '/input', { kind: 'click', ...point, screen }, signal);
-    await computers.guest(botId, '/input', { kind: 'key', key: 'ctrl+a', screen }, signal);
-    await computers.guest(botId, '/input', { kind: 'type', text: url.href, screen }, signal);
+    await computers.guest(botId, '/input', { kind: 'click', ...point }, signal);
+    await computers.guest(botId, '/input', { kind: 'key', key: 'ctrl+a' }, signal);
+    await computers.guest(botId, '/input', { kind: 'type', text: url.href }, signal);
     await Promise.all([
       page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 30000 }),
-      computers.guest(botId, '/input', { kind: 'key', key: 'Return', screen }, signal),
+      computers.guest(botId, '/input', { kind: 'key', key: 'Return' }, signal),
     ]);
   }
   // options: the task's settings snapshot (model, visibleWork, searchUrl).
@@ -92,9 +91,8 @@ function createTools(store, computers, handlers = {}) {
       if (![args.x, args.y].every(v => Number.isInteger(v) && v >= 0 && v <= 1000)) throw new Error('Use normalized coordinates from 0 to 1000.');
       args = { ...args, x: Math.min(1279, Math.round(args.x*1280/1000)), y: Math.min(959, Math.round(args.y*960/1000)) };
     }
-    const screen = args.screen ?? 1, visible = options.visibleWork === true;
-    if (!Number.isInteger(screen) || screen < 1 || screen > 4) throw new Error('Choose a screen from 1 to 4.');
-    if (/browser_|search_web|computer_/.test(name)) await computers.waitForControl(botId, screen, signal);
+    const visible = options.visibleWork === true;
+    if (/browser_|search_web|computer_/.test(name)) await computers.waitForControl(botId, signal);
     switch (name) {
       case 'list_files': {
         const dir = workspacePath(store.workspace, args.path || '.');
@@ -119,20 +117,20 @@ function createTools(store, computers, handlers = {}) {
       case 'search_web': case 'browser_open': {
         const url = new URL(name === 'search_web' ? (options.searchUrl || DEFAULT_SEARCH).replace('{query}', encodeURIComponent(args.query)) : args.url);
         if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error('Only ordinary HTTP and HTTPS pages can be opened.');
-        const page = await computers.page(botId, screen, signal);
-        await navigate(page, url, botId, screen, signal, visible);
+        const page = await computers.page(botId, signal);
+        await navigate(page, url, botId, signal, visible);
         return readPage(page, 0, 6000);
       }
       case 'browser_read': {
         const start = args.start ?? 0;
         if (!Number.isInteger(start) || start < 0) throw new Error('Choose a start offset of 0 or more.');
-        const page = await computers.page(botId, screen, signal);
+        const page = await computers.page(botId, signal);
         await page.bringToFront();
         return readPage(page, start);
       }
       case 'browser_click': case 'browser_type': {
         if (!Number.isInteger(args.element) || args.element < 0 || args.element > 119) throw new Error('Use an element number from the current page.');
-        const page = await computers.page(botId, screen, signal);
+        const page = await computers.page(botId, signal);
         const element = page.locator(`[data-blots-element="${args.element}"]`);
         if (name === 'browser_type' && (typeof args.text !== 'string' || args.text.length > 20000)) throw new Error('Enter text under 20,000 characters.');
         if (name === 'browser_type') {
@@ -150,31 +148,31 @@ function createTools(store, computers, handlers = {}) {
             const r = el.getBoundingClientRect(), border = (outerWidth - innerWidth*devicePixelRatio) / 2;
             return { x: Math.round(screenX + border + (r.x + r.width/2)*devicePixelRatio), y: Math.round(screenY + outerHeight - innerHeight*devicePixelRatio - border + (r.y + r.height/2)*devicePixelRatio) };
           });
-          await computers.guest(botId, '/input', { kind: 'click', ...point, screen }, signal);
+          await computers.guest(botId, '/input', { kind: 'click', ...point }, signal);
           if (name === 'browser_type') {
-            await computers.guest(botId, '/input', { kind: 'key', key: 'ctrl+a', screen }, signal);
-            await computers.guest(botId, '/input', { kind: 'type', text: args.text, screen }, signal);
+            await computers.guest(botId, '/input', { kind: 'key', key: 'ctrl+a' }, signal);
+            await computers.guest(botId, '/input', { kind: 'type', text: args.text }, signal);
           }
         }
         await page.waitForTimeout(250);
         await page.waitForLoadState('domcontentloaded').catch(() => {});
         return readPage(page, 0, 3000);
       }
-      case 'computer_exec': return computers.guest(botId, '/exec', { command: args.command, screen }, signal);
-      case 'computer_job_start': return computers.guest(botId, '/jobs/start', { command: args.command, screen }, signal);
-      case 'computer_job_status': return computers.guest(botId, '/jobs/status', { job: args.job, screen }, signal);
-      case 'computer_job_stop': return computers.guest(botId, '/jobs/stop', { job: args.job, screen }, signal);
-      case 'computer_launch': return computers.guest(botId, '/launch', { app: args.app, screen }, signal);
+      case 'computer_exec': return computers.guest(botId, '/exec', { command: args.command }, signal);
+      case 'computer_job_start': return computers.guest(botId, '/jobs/start', { command: args.command }, signal);
+      case 'computer_job_status': return computers.guest(botId, '/jobs/status', { job: args.job }, signal);
+      case 'computer_job_stop': return computers.guest(botId, '/jobs/stop', { job: args.job }, signal);
+      case 'computer_launch': return computers.guest(botId, '/launch', { app: args.app }, signal);
       case 'computer_screenshot': {
         // Normalized-coordinate models are resolution independent, so they receive a smaller image (fewer vision tokens).
-        const image = await computers.guest(botId, `/screenshot?screen=${screen}&format=jpeg${normalized ? '&width=1024' : ''}`);
+        const image = await computers.guest(botId, `/screenshot?format=jpeg${normalized ? '&width=1024' : ''}`);
         return { image: `data:image/jpeg;base64,${image.toString('base64')}`, note: normalized ? 'Screenshot of the real desktop attached below. Use normalized 0–1000 coordinates.' : 'Screenshot of the real desktop attached below (1280 by 960 pixels).' };
       }
-      case 'computer_click': return computers.guest(botId, '/input', { kind: 'click', x: args.x, y: args.y, screen }, signal);
-      case 'computer_move': return computers.guest(botId, '/input', { kind: 'move', x: args.x, y: args.y, screen }, signal);
-      case 'computer_scroll': return computers.guest(botId, '/input', { kind: 'scroll', direction: args.direction, screen }, signal);
-      case 'computer_type': return computers.guest(botId, '/input', { kind: 'type', text: args.text, screen }, signal);
-      case 'computer_key': return computers.guest(botId, '/input', { kind: 'key', key: args.key, screen }, signal);
+      case 'computer_click': return computers.guest(botId, '/input', { kind: 'click', x: args.x, y: args.y }, signal);
+      case 'computer_move': return computers.guest(botId, '/input', { kind: 'move', x: args.x, y: args.y }, signal);
+      case 'computer_scroll': return computers.guest(botId, '/input', { kind: 'scroll', direction: args.direction }, signal);
+      case 'computer_type': return computers.guest(botId, '/input', { kind: 'type', text: args.text }, signal);
+      case 'computer_key': return computers.guest(botId, '/input', { kind: 'key', key: args.key }, signal);
       case 'delegate_task': return handlers.delegate(args, botId);
       case 'schedule_task': return handlers.schedule(args, botId);
       default: throw new Error(`Unknown tool: ${name}`);

@@ -10,7 +10,7 @@ The installed Mac app was verified on October 7, 2026 with three running Linux c
 
 ## Desktop resources
 
-Settings has CPU and memory sliders. Each computer defaults to **one CPU core and 1 GiB RAM**, with ranges of 1–4 cores and 1–4 GiB in half-GiB memory increments. Save desktop limits, then stop and start a computer to apply them. Existing computers update their limits without deleting their home directory, browser profiles, or workspace. A limit is a ceiling, not guaranteed use or a reserved share. Complex pages or several extra screens can need a higher limit; use 1.5–2 GiB if Chromium becomes unstable.
+Settings has CPU and memory sliders. Each computer defaults to **one CPU core and 1 GiB RAM**, with ranges of 1–4 cores and 1–4 GiB in half-GiB memory increments. Save desktop limits, then stop and start a computer to apply them. Existing computers update their limits without deleting their home directory, browser profiles, or workspace. A limit is a ceiling, not guaranteed use or a reserved share. Complex pages can need a higher limit; use 1.5–2 GiB if Chromium becomes unstable.
 
 Docker’s shared VM and the native Splash inference process have separate budgets. On this Mac, the shared Docker VM is configured for 18 CPUs and 8 GiB; those global settings were retained because they also govern other Docker workloads. The Blots sliders constrain each bot inside it. Installed Linux apps consume disk space but do not run simply because their launchers are visible. Model generation is serialized; three bots do not mean three resident model copies.
 

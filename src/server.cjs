@@ -168,24 +168,23 @@ async function createServer(options = {}) {
         }
         if (route.startsWith('/api/computer/')) {
           const data = method === 'GET' ? Object.fromEntries(url.searchParams) : await body(req);
-          bot(data.botId); const screen = Number(data.screen || 1);
-          if (!Number.isInteger(screen) || screen < 1 || screen > 4) throw new Error('Choose a screen from 1 to 4.');
-          if (route === '/api/computer/control' && method === 'POST') { computers.takeover(data.botId, screen, data.on === true); return json(res, { ok: true }); }
+          bot(data.botId);
+          if (route === '/api/computer/control' && method === 'POST') { computers.takeover(data.botId, data.on === true); return json(res, { ok: true }); }
           if (route === '/api/computer/stop' && method === 'POST') {
             await agent.stopBot(data.botId);
             await computers.stop(data.botId); return json(res, { ok: true });
           }
           if (route === '/api/computer/screenshot' && method === 'GET') {
-            const image = await computers.guest(data.botId, `/screenshot?screen=${screen}`); res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'no-store' }); return res.end(image);
+            const image = await computers.guest(data.botId, '/screenshot'); res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'no-store' }); return res.end(image);
           }
-          if (route === '/api/computer/launch' && method === 'POST') return json(res, await computers.guest(data.botId, '/launch', { app: data.app, screen }));
+          if (route === '/api/computer/launch' && method === 'POST') return json(res, await computers.guest(data.botId, '/launch', { app: data.app }));
           if (route === '/api/computer/navigate' && method === 'POST') {
-            if (!computers.controls.has(`${data.botId}:${screen}`)) throw new Error('Take control before navigating this screen.');
+            if (!computers.controls.has(data.botId)) throw new Error('Take control before navigating.');
             const input = text(data.url, 'Search or address', 2000);
             const target = /^https?:\/\//i.test(input) ? input : /^[\w.-]+\.[a-z]{2,}(\/.*)?$/i.test(input) ? `https://${input}` : `https://www.google.com/search?q=${encodeURIComponent(input)}`;
             const targetUrl = new URL(target);
             if (!['http:', 'https:'].includes(targetUrl.protocol) || targetUrl.username || targetUrl.password) throw new Error('Choose an HTTP or HTTPS address.');
-            const page = await computers.page(data.botId, screen);
+            const page = await computers.page(data.botId);
             await page.goto(targetUrl.href, { waitUntil: 'domcontentloaded', timeout: 30000 });
             return json(res, { url: page.url() });
           }
@@ -196,7 +195,7 @@ async function createServer(options = {}) {
       const relative = route === '/' ? 'index.html' : decodeURIComponent(route).slice(1);
       const file = path.resolve(publicDir, relative);
       if (!file.startsWith(publicDir + path.sep) || !fs.existsSync(file) || !fs.statSync(file).isFile()) return json(res, { error: 'Not found.' }, 404);
-      const type = { '.html': 'text/html; charset=utf-8', '.css': 'text/css', '.js': 'text/javascript', '.svg': 'image/svg+xml', '.png': 'image/png' }[path.extname(file)] || 'application/octet-stream';
+      const type = { '.html': 'text/html; charset=utf-8', '.css': 'text/css', '.js': 'text/javascript', '.svg': 'image/svg+xml', '.png': 'image/png', '.woff2': 'font/woff2' }[path.extname(file)] || 'application/octet-stream';
       res.writeHead(200, { 'Content-Type': type }); fs.createReadStream(file).pipe(res);
     } catch (error) { if (!res.headersSent) json(res, { error: error.message }, 400); else res.end(); }
   });
@@ -205,13 +204,13 @@ async function createServer(options = {}) {
     if (closing || req.headers.origin !== origin || req.headers.host !== new URL(origin).host) return socket.destroy();
     const url = new URL(req.url, origin);
     if (url.pathname !== '/vnc') return socket.destroy();
-    const botId = url.searchParams.get('bot'), screen = Number(url.searchParams.get('screen'));
-    if (!store.state.bots.some(b => b.id === botId) || ![1, 2, 3, 4].includes(screen) || !computers.status().some(c => c.botId === botId)) return socket.destroy();
+    const botId = url.searchParams.get('bot');
+    if (!store.state.bots.some(b => b.id === botId) || !computers.status().some(c => c.botId === botId)) return socket.destroy();
     try {
-      const computer = await computers.ensureScreen(botId, screen);
+      const computer = await computers.ensure(botId);
       if (closing) return socket.destroy();
       wss.handleUpgrade(req, socket, head, ws => {
-        const tcp = net.connect(computer.ports[5900 + screen], '127.0.0.1');
+        const tcp = net.connect(computer.ports[5901], '127.0.0.1');
         const stream = createWebSocketStream(ws);
         tcp.pipe(stream).pipe(tcp);
         tcp.on('error', () => stream.destroy()); stream.on('error', () => tcp.destroy()); stream.on('close', () => tcp.destroy()); tcp.on('close', () => stream.destroy());
@@ -245,6 +244,7 @@ async function createServer(options = {}) {
 }
 if (require.main === module) createServer().then(app => {
   console.log(`Blots is running at ${app.origin}`);
+  app.computers.sweep();
   const stop = async () => { await app.close(); process.exit(0); }; process.on('SIGINT', stop); process.on('SIGTERM', stop);
 }).catch(error => { console.error(error.message); process.exit(1); });
 module.exports = { createServer };

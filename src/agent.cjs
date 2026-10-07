@@ -244,7 +244,7 @@ function createAgent(store, tools) {
             if (settings.vision && !screenshots.length && last?.status === 'done' && DESKTOP.test(last.tool)) {
               run.activity = 'Rechecking the desktop'; store.saveSoon();
               try {
-                const shot = await tools.execute('computer_screenshot', { screen: last.args?.screen ?? 1 }, bot.id, controller.signal, settings);
+                const shot = await tools.execute('computer_screenshot', {}, bot.id, controller.signal, settings);
                 screenshots.push({ type: 'image_url', image_url: { url: shot.image } });
               } catch (error) {
                 if (controller.signal.aborted) throw error;

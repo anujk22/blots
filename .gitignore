@@ -1,8 +1,9 @@
 node_modules/
-dist/
+dist.noindex/
 *.app/
 *.zip
 *.dmg
 .DS_Store
 *.log
 .env*
+__pycache__/

@@ -11,6 +11,7 @@ else {
   app.whenReady().then(async () => {
     nativeTheme.themeSource = 'dark';
     backend = await createServer({ port: 0, dataDir: app.getPath('userData') });
+    backend.computers.sweep();
     const makeWindow = () => {
       window = new BrowserWindow({ width: 1480, height: 940, minWidth: 950, minHeight: 650, title: 'Blots', backgroundColor: '#111112', titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 18, y: 13 }, webPreferences: { preload: path.join(__dirname, 'preload.cjs'), nodeIntegration: false, contextIsolation: true, sandbox: true } });
       window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
@@ -27,13 +28,19 @@ else {
     makeWindow(); app.on('activate', () => { if (!window) makeWindow(); });
   }).catch(error => { dialog.showErrorBox('Blots couldn’t start', error.message); app.quit(); });
   app.on('window-all-closed', () => app.quit());
+  // Terminal Ctrl-C, logout and kill run the same cleanup as Quit.
+  for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(signal, () => app.quit());
   app.on('before-quit', event => {
     if (!backend || cleanedUp) return;
     event.preventDefault();
     if (quitting) return;
     quitting = true;
     backend.close({ releaseResources: true }).then(() => { cleanedUp = true; app.quit(); }).catch(error => {
-      quitting = false; dialog.showErrorBox('Blots couldn’t finish cleanup', error.message + '\nTry quitting again after resolving this issue.');
+      quitting = false;
+      // Never trap the user: a failed cleanup can be retried or skipped. Leftover desktops are stopped on next launch.
+      const choice = dialog.showMessageBoxSync({ type: 'warning', message: 'Blots couldn’t finish cleanup', detail: error.message, buttons: ['Try Again', 'Quit Anyway', 'Cancel'], defaultId: 0, cancelId: 2 });
+      if (choice === 1) cleanedUp = true;
+      if (choice !== 2) app.quit();
     });
   });
 }

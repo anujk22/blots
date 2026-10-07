@@ -41,7 +41,7 @@ class Handler(BaseHTTPRequestHandler):
         u = urlparse(self.path)
         q = parse_qs(u.query)
         screen = q.get('screen', ['1'])[0]
-        if screen not in ['1', '2', '3', '4']:
+        if screen != '1':
             return self.reply({'error': 'Invalid screen'}, 400)
         if u.path == '/':
             with open('/opt/blots/home.html', 'rb') as f:
@@ -91,12 +91,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply({'error': 'Request too large'}, 413)
             data = json.loads(self.rfile.read(int(self.headers.get('Content-Length', '0'))))
             screen = str(data.get('screen', 1))
-            if screen not in ['1', '2', '3', '4']:
+            if screen != '1':
                 raise ValueError('Invalid screen')
             env = dict(os.environ, DISPLAY=':'+screen)
-            if self.path == '/screen':
-                start_screen(int(screen))
-                return self.reply({'ready': True})
             if self.path == '/launch':
                 app = APPS.get(data.get('app'))
                 if not app:

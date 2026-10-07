@@ -45,7 +45,7 @@ For the native app:
 
 ```sh
 npm run build
-open dist/mac-arm64/Blots.app
+open dist.noindex/mac-arm64/Blots.app
 ```
 
 For browser-based development: `npm run dev`, then open `http://127.0.0.1:4317`. The packaged desktop chooses an available loopback port automatically.
@@ -57,7 +57,7 @@ The desktop is built locally and unsigned for distribution; it is not a notarize
 - Multiple named bots with editable roles, instructions, and colors. Bots can delegate tasks to teammates; delegated tasks appear in their own conversations and share the local model's request slots.
 - Persistent conversations with streamed local model responses.
 - Live web search, real browser navigation, page reading, and numbered browser actions. Research bots can open sources and cite URLs; no paid search API is needed. Search defaults to DuckDuckGo's lightweight HTML results; Settings accepts any search address containing `{query}`, such as a local SearXNG instance. Page observations are compact: numbered elements are one line each, and long pages are read in pieces with `browser_read` and `start`.
-- A real 1280 × 960 Linux computer per bot, with an inset Chromium browser, an agent-colored welcome screen, clock, portrait, patterned background, and a native browser/terminal/files dock. The app grid lists the installed tools. The default image includes Chromium, Mousepad, a terminal and Files; `npm run computer:build:full` adds Blender, Draw, FreeCAD, GIMP, Godot, Inkscape, Kdenlive, KiCad, OpenSCAD, ParaView, QGIS, and Solitaire (several GB). Four independent desktops are available through a compact picker, with persistent browser profiles and home directories.
+- A real 1280 × 960 Linux computer per bot, with an inset Chromium browser, an agent-colored welcome screen, clock, portrait, patterned background, and a native browser/terminal/files dock. The app grid lists the installed tools. The default image includes Chromium, Mousepad, a terminal and Files; `npm run computer:build:full` adds Blender, Draw, FreeCAD, GIMP, Godot, Inkscape, Kdenlive, KiCad, OpenSCAD, ParaView, QGIS, and Solitaire (several GB). Each bot keeps one desktop. Its home folder, browser profile (logins, cookies) and installed packages persist across restarts; quitting Blots stops every desktop, and desktops left running by a crash are stopped on the next launch.
 - Live VNC viewing, expansion, and mouse/keyboard takeover, with a wider conversation pane and the composer below the conversation. Agent tools wait while you have control of their screen.
 - Local workspace listing, reading, file creation/editing, and downloads. Saved memories and new scheduled tasks come to you for review. Workspace file writes, browser actions, and Linux actions also ask unless Auto is enabled for that bot.
 - Durable local memory shared among bots, managed by you. Memory travels with each new request rather than in the system prompt; when saved memory exceeds about 4,000 characters, the notes sharing the most distinctive words with the request are included.
