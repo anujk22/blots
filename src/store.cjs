@@ -6,7 +6,7 @@ const id = () => randomUUID();
 const now = () => new Date().toISOString();
 const initial = () => ({
   version: 1,
-  settings: { baseUrl: 'http://127.0.0.1:8000/v1', model: '', apiKey: '', temperature: 0.6, maxTokens: 16384, contextTokens: 65536, maxSteps: 120, maxMinutes: 120, computerCpus: 1, computerMemoryMiB: 1024, vision: false, reasoningEffort: '', chatShare: 0.44 },
+  settings: { baseUrl: 'http://127.0.0.1:8000/v1', model: '', apiKey: '', temperature: 0.6, maxTokens: 16384, contextTokens: 65536, maxSteps: 120, maxMinutes: 120, computerCpus: 1, computerMemoryMiB: 1024, parallelRequests: 1, visibleWork: false, searchUrl: 'https://html.duckduckgo.com/html/?q={query}', vision: false, reasoningEffort: '', chatShare: 0.44 },
   bots: [
     { id: 'blot', name: 'Blot', role: 'Your everyday assistant', instructions: 'Help with planning, research, writing, and organizing. Be clear and practical.', color: '#2155ee' },
     { id: 'scout', name: 'Scout', role: 'Research & discovery', instructions: 'Research carefully. Use browser tools to read sources when asked. Cite URLs. Distinguish evidence from assumptions.', color: '#227f92' },
@@ -35,17 +35,24 @@ function createStore(dataDir) {
   }
   state.settings.computerCpus ??= 1;
   state.settings.computerMemoryMiB ??= 1024;
+  state.settings.parallelRequests ??= 1;
+  state.settings.visibleWork ??= false;
+  state.settings.searchUrl ??= 'https://html.duckduckgo.com/html/?q={query}';
+  let pending;
   const save = () => {
+    clearTimeout(pending); pending = null;
     fs.writeFileSync(file + '.tmp', JSON.stringify(state), { mode: 0o600 });
     fs.renameSync(file + '.tmp', file);
   };
+  // Coalesces frequent progress updates during tasks into one write; save() flushes immediately.
+  const saveSoon = () => { pending ??= setTimeout(save, 500); pending.unref(); };
   // Interrupted work is recorded, never silently resumed after a restart.
   for (const run of state.runs) if (['running', 'waiting', 'queued'].includes(run.status)) {
     run.status = 'stopped'; run.endedAt = now(); run.error = 'Blots closed before this task finished.';
     delete run.approval;
   }
   save();
-  return { state, save, workspace, dataDir };
+  return { state, save, saveSoon, workspace, dataDir };
 }
 
 // Check the actual parent directories as well as the lexical path: symlinks must not escape.

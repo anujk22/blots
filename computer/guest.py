@@ -1,15 +1,28 @@
-import json, os, subprocess, tempfile, selectors, time
+import json, os, subprocess, tempfile, selectors, time, signal, secrets
 from collections import deque
 import mimetypes
 from pathlib import Path
 import gi
 gi.require_version('Gtk', '3.0')
-from gi.repository import Gtk
+from gi.repository import Gtk, GdkPixbuf
 from desktop import appearance, APPS
 from pointer import move
 from screen import start_screen, browser_command
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
+
+JOBS = {}
+JOB_DIR = Path('/tmp/blots-jobs')
+
+def job_status(job_id):
+    job = JOBS.get(job_id)
+    if not job:
+        raise ValueError('Unknown job. Known jobs: ' + (', '.join(JOBS) or 'none'))
+    code = job['proc'].poll()
+    with open(job['log'], 'rb') as log:
+        log.seek(max(0, os.path.getsize(job['log']) - 6000))
+        output = log.read().decode(errors='replace')
+    return {'job': job_id, 'command': job['command'][:200], 'running': code is None, 'exitCode': code, 'elapsedSeconds': round(time.monotonic() - job['started']), 'output': output}
 
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *args):
@@ -58,6 +71,11 @@ class Handler(BaseHTTPRequestHandler):
             fd, filename = tempfile.mkstemp(suffix='.png'); os.close(fd)
             try:
                 subprocess.run(['scrot', '--pointer', '-o', filename], env=dict(os.environ, DISPLAY=':'+screen), timeout=10, check=True, capture_output=True)
+                if q.get('format', ['png'])[0] == 'jpeg':
+                    # Agent screenshots: JPEG, optionally downscaled, is far smaller to encode and send than PNG.
+                    width = min(1280, max(320, int(q.get('width', ['1280'])[0])))
+                    image = GdkPixbuf.Pixbuf.new_from_file_at_scale(filename, width, -1, True)
+                    return self.reply(image.save_to_bufferv('jpeg', ['quality'], ['80'])[1], kind='image/jpeg')
                 with open(filename, 'rb') as f:
                     return self.reply(f.read(), kind='image/png')
             finally:
@@ -114,13 +132,38 @@ class Handler(BaseHTTPRequestHandler):
                                     stream.unregister(key.fileobj)
                         proc.wait(timeout=max(.001, deadline-time.monotonic()))
                     except subprocess.TimeoutExpired:
-                        import signal
                         os.killpg(proc.pid, signal.SIGKILL)
                         proc.wait(); timed_out = True
                     finally:
                         proc.stdout.close()
                 output = b''.join(chunks).decode(errors='replace')[-20000:]
                 return self.reply({'output': output, 'exitCode': -1 if timed_out else proc.returncode, **({'error': 'Command exceeded 30 seconds'} if timed_out else {})})
+            if self.path == '/jobs/start':
+                command = data.get('command')
+                if not isinstance(command, str) or len(command) > 20000:
+                    raise ValueError('Invalid command')
+                if sum(job['proc'].poll() is None for job in JOBS.values()) >= 8:
+                    raise ValueError('Eight jobs are already running. Stop one first.')
+                JOB_DIR.mkdir(exist_ok=True)
+                job_id = secrets.token_hex(4)
+                with open(JOB_DIR / f'{job_id}.log', 'wb') as log:
+                    proc = subprocess.Popen(['/bin/bash', '-lc', command], env=env, cwd='/workspace', stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+                JOBS[job_id] = {'proc': proc, 'log': JOB_DIR / f'{job_id}.log', 'command': command, 'started': time.monotonic()}
+                return self.reply({'job': job_id, 'running': True})
+            if self.path == '/jobs/status':
+                return self.reply(job_status(str(data.get('job'))))
+            if self.path == '/jobs/stop':
+                job_id = str(data.get('job'))
+                status = job_status(job_id)
+                if status['running']:
+                    proc = JOBS[job_id]['proc']
+                    os.killpg(proc.pid, signal.SIGTERM)
+                    try:
+                        proc.wait(timeout=3)
+                    except subprocess.TimeoutExpired:
+                        os.killpg(proc.pid, signal.SIGKILL)
+                        proc.wait()
+                return self.reply(job_status(job_id))
             if self.path == '/input':
                 kind = data.get('kind')
                 if kind in ['click', 'move']:

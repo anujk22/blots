@@ -140,9 +140,10 @@ test('opening and searching a page use the visible address bar and accept redire
     waitForControl: async () => {}, page: async () => page,
     guest: async (bot, route, data) => calls.push(data),
   });
+  const visible = { visibleWork: true, searchUrl: 'https://www.google.com/search?q={query}' };
   for (const [tool, args, address] of [['browser_open', { url: 'https://destination.test/' }, 'https://destination.test/'], ['search_web', { query: 'visible search' }, 'https://www.google.com/search?q=visible%20search']]) {
     calls.length = 0;
-    assert.equal((await tools.execute(tool, args, 'blot', new AbortController().signal)).url, 'https://destination.test/redirected');
+    assert.equal((await tools.execute(tool, args, 'blot', new AbortController().signal, visible)).url, 'https://destination.test/redirected');
     assert.deepEqual(calls, ['front', { kind: 'click', x: 640, y: 140, screen: 1 }, { kind: 'key', key: 'ctrl+a', screen: 1 }, { kind: 'type', text: address, screen: 1 }, 'navigation', { kind: 'key', key: 'Return', screen: 1 }]);
   }
 });
@@ -326,7 +327,7 @@ test('unchanged state polls send no body, while drafts and computer control inva
   try {
     const first = await get(); const tag = first.headers.get('etag'); assert.ok(tag); await first.json();
     const unchanged = await get(tag); assert.equal(unchanged.status, 304); assert.equal(await unchanged.text(), '');
-    app.store.state.runs.push({ id: 'draft', botId: 'blot', status: 'running', draft: 'First' });
+    app.store.state.runs.push({ id: 'draft', botId: 'blot', status: 'running', draft: 'First', steps: [] });
     const updated = await get(tag); assert.equal(updated.status, 200); const next = updated.headers.get('etag'); await updated.json();
     app.store.state.runs[0].draft += ' token';
     const streaming = await get(next); assert.equal(streaming.status, 200); assert.notEqual(streaming.headers.get('etag'), next); await streaming.json();
@@ -406,11 +407,16 @@ test('35B visual grounding converts normalized coordinates without changing 27B 
   const normalized=tools.definitionsFor(true,model).find(t=>t.function.name==='computer_click');
   assert.equal(normalized.function.parameters.properties.x.maximum,1000);
   assert.equal(tools.definitionsFor(true,'audreyt/Qwen3.8-27B-Splash-abliterated').find(t=>t.function.name==='computer_click').function.parameters.properties.x.maximum,1279);
-  await tools.execute('computer_click',{x:503,y:945},'blot',undefined,model);
-  await tools.execute('computer_move',{x:1000,y:1000},'blot',undefined,model);
-  await tools.execute('computer_click',{x:447,y:578},'blot',undefined,'audreyt/Qwen3.8-27B-Splash-abliterated');
+  await tools.execute('computer_click',{x:503,y:945},'blot',undefined,{model});
+  await tools.execute('computer_move',{x:1000,y:1000},'blot',undefined,{model});
+  await tools.execute('computer_click',{x:447,y:578},'blot',undefined,{model:'audreyt/Qwen3.8-27B-Splash-abliterated'});
   assert.deepEqual(inputs.map(a=>[a[2].x,a[2].y]),[[644,907],[1279,959],[447,578]]);
-  await assert.rejects(tools.execute('computer_click',{x:1001,y:0},'blot',undefined,model),/normalized/);
+  await assert.rejects(tools.execute('computer_click',{x:1001,y:0},'blot',undefined,{model}),/normalized/);
+  const routes=[];
+  const shots=createTools(createStore(temp()),{waitForControl:async()=>{},guest:async(_bot,route)=>{routes.push(route);return Buffer.from('jpeg');}});
+  assert.match((await shots.execute('computer_screenshot',{},'blot',undefined,{model})).image,/^data:image\/jpeg;base64,/);
+  await shots.execute('computer_screenshot',{},'blot',undefined,{model:'audreyt/Qwen3.8-27B-Splash-abliterated'});
+  assert.deepEqual(routes,['/screenshot?screen=1&format=jpeg&width=1024','/screenshot?screen=1&format=jpeg'],'Only resolution-independent models get downscaled screenshots');
   const {reasoningOptions}=require('../src/inference.cjs');assert.deepEqual(reasoningOptions(model),['none']);
 });
 

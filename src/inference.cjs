@@ -6,11 +6,9 @@ function localBase(value) {
   return url.toString().replace(/\/+$/, '');
 }
 
-// Expose only reasoning controls verified in each Splash package.
-function reasoningOptions(model) {
-  if (model === 'incoai/Qwen3.6-35B-A3B-Splash') return ['none'];
-  return ['incoai/Qwen3.8-27B-Splash', 'audreyt/Qwen3.8-27B-Splash-abliterated'].includes(model) ? ['none', 'low', 'medium', 'xhigh'] : [];
-}
+const { profile } = require('./models.cjs');
+// Expose only reasoning controls verified for each model.
+const reasoningOptions = model => profile(model).reasoning;
 
 async function models(settings) {
   const res = await fetch(localBase(settings.baseUrl) + '/models', {
@@ -19,7 +17,7 @@ async function models(settings) {
   });
   if (!res.ok) throw new Error(`Model server returned ${res.status}. Check its address and API key.`);
   const data = await res.json();
-  return (data.data || []).filter(m => typeof m.id === 'string').map(m => ({ id: m.id, context: m.context_length || m.max_model_len, reasoning: reasoningOptions(m.id) }));
+  return (data.data || []).filter(m => typeof m.id === 'string').map(m => ({ id: m.id, context: m.context_length || m.max_model_len, reasoning: reasoningOptions(m.id), label: profile(m.id).label }));
 }
 
 async function complete(settings, messages, tools, signal, onDelta) {

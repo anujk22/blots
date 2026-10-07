@@ -10,7 +10,7 @@ The former 12-step error was an app limit: the task stopped after twelve model d
 - Checkpoints are saved before an action batch and after each recorded result. A tool call interrupted without confirmation is described as uncertain: the agent must inspect the current state before proceeding. This cannot guarantee exactly-once effects if the app closes between an action happening and its result being recorded.
 - Four consecutive identical action-and-result rounds trigger automatic reassessment, rather than a task pause. Successful desktop actions also get a fresh screenshot when vision is enabled; repeated input acknowledgements alone do not prove the screen stopped changing. The model is prompted to inspect progress and change approach when needed. The configured task/time budgets still apply.
 - The agent instructions ask for a concrete finish point even for open-ended requests, verified progress, and inspection after resuming. Model-generated summaries can omit details; they are not perfect memory.
-- Each bot's work remains ordered, different bots can perform computer actions concurrently, and inference is serialized. Continuing does not add another model process.
+- Each bot's work remains ordered, different bots can perform computer actions concurrently, and inference uses the configured number of parallel request slots (default 1). Continuing does not add another model process.
 - Checkpoints are removed when tasks finish, their conversations are deleted, or their activity falls outside the retained recent runs. Tool activity retains at most 120 entries per run, with active runs kept even while newer tasks are created.
 
 ## Installed 35B A3B Splash

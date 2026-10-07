@@ -68,7 +68,11 @@ async function createServer(options = {}) {
         if (req.headers['x-blots'] !== '1') return json(res, { error: 'Use the Blots app to access local data.' }, 403);
         if (route === '/api/state' && method === 'GET') {
           const { apiKey, ...settings } = store.state.settings;
-          const payload = JSON.stringify({ ...store.state, settings: { ...settings, keyConfigured: !!apiKey }, computers: computers.status(), startingComputers: computers.starting(), build: buildState, workspace: store.workspace });
+          // Only the open conversation carries messages, and step details are trimmed: polls stay small as history grows.
+          const open = url.searchParams.get('chat');
+          const chats = store.state.chats.map(({ messages, ...chat }) => ({ ...chat, messageCount: messages.length, messages: chat.id === open ? messages : [] }));
+          const runs = store.state.runs.map(run => ({ ...run, steps: run.steps.slice(-40).map(step => ({ ...step, args: step.args && JSON.parse(JSON.stringify(step.args, (key, value) => typeof value === 'string' && value.length > 400 ? value.slice(0, 400) + '…' : value)), result: step.result?.slice(0, 600) })) }));
+          const payload = JSON.stringify({ ...store.state, chats, runs, settings: { ...settings, keyConfigured: !!apiKey }, computers: computers.status(), startingComputers: computers.starting(), build: buildState, workspace: store.workspace });
           const etag = '"' + createHash('sha1').update(payload).digest('base64') + '"';
           res.setHeader('ETag', etag); res.setHeader('Cache-Control', 'no-store');
           if (req.headers['if-none-match'] === etag) { res.writeHead(304); return res.end(); }
@@ -91,7 +95,13 @@ async function createServer(options = {}) {
           }
           if (data.apiKey !== undefined) s.apiKey = String(data.apiKey).slice(0, 1000);
           if (data.vision !== undefined) s.vision = data.vision === true;
-          for (const [key, min, max] of [['temperature', 0, 2], ['maxTokens', 256, 65536], ['contextTokens', 8192, 131072], ['computerCpus', 1, 4], ['computerMemoryMiB', 1024, 4096], ['maxSteps', 1, 1000], ['maxMinutes', 1, 480]]) if (data[key] !== undefined) {
+          if (data.visibleWork !== undefined) s.visibleWork = data.visibleWork === true;
+          if (data.searchUrl !== undefined) {
+            const template = String(data.searchUrl).trim(), parsed = URL.canParse(template.replace('{query}', 'q')) && new URL(template.replace('{query}', 'q'));
+            if (template.length > 500 || !template.includes('{query}') || !parsed || !['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) throw new Error('Use an HTTP or HTTPS search address containing {query}.');
+            s.searchUrl = template;
+          }
+          for (const [key, min, max] of [['temperature', 0, 2], ['maxTokens', 256, 65536], ['contextTokens', 8192, 131072], ['computerCpus', 1, 4], ['computerMemoryMiB', 1024, 4096], ['maxSteps', 1, 1000], ['maxMinutes', 1, 480], ['parallelRequests', 1, 4]]) if (data[key] !== undefined) {
             const n = Number(data[key]); if (!Number.isFinite(n) || n < min || n > max || (key !== 'temperature' && !Number.isInteger(n))) throw new Error(`Invalid ${key}.`); s[key] = n;
           }
           if (s.contextTokens <= s.maxTokens+1024) throw new Error('The task context budget must leave room beyond the output budget.');
@@ -228,6 +238,7 @@ async function createServer(options = {}) {
       }
       for (const client of wss.clients) client.close(); wss.close();
       server.closeAllConnections(); if (server.listening) await new Promise(resolve => server.close(resolve));
+      store.save();
     })().catch(error => { closePromise = null; throw error; });
     return closePromise;
   } };

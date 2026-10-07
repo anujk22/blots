@@ -12,7 +12,8 @@
     "test": "node --test test/*.test.cjs",
     "build": "npm run vendor && electron-builder --mac dir --arm64",
     "vendor": "esbuild public/vendor-entry.js --bundle --format=esm --minify --outfile=public/vendor.js",
-    "computer:build": "docker build -t blots-computer:1.0 computer"
+    "computer:build": "docker build -t blots-computer:1.0 computer",
+    "computer:build:full": "docker build --build-arg FULL_APPS=1 -t blots-computer:1.0 computer"
   },
   "dependencies": {
     "@novnc/novnc": "1.7.0",

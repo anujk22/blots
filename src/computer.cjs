@@ -21,7 +21,9 @@ function createComputers(store) {
       try { await runDocker(['info', '--format', '{{.ServerVersion}}'], 10000); return; }
       catch {
         if (process.platform !== 'darwin' || !fs.existsSync('/Applications/Docker.app')) throw new Error('Install Docker Desktop before starting a Linux computer.');
-        await exec('/usr/bin/open', ['-g', '-j', '-a', '/Applications/Docker.app']);
+        // The Docker Desktop CLI starts the engine headlessly; older installs without it fall back to a hidden app launch.
+        try { await runDocker(['desktop', 'start', '--detach'], 15000); }
+        catch { await exec('/usr/bin/open', ['-g', '-j', '-a', '/Applications/Docker.app']); }
         for (let i = 0; i < 80; i++) {
           try { await runDocker(['info', '--format', '{{.ServerVersion}}'], 1000); return; } catch {}
           await new Promise(resolve => setTimeout(resolve, 500));

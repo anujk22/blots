@@ -1,8 +1,9 @@
-import json, re, struct, subprocess, sys, zlib
+import json, re, shutil, struct, subprocess, sys, zlib
 from pathlib import Path
 
 HOME = Path('/home/blots')
-APPS = json.loads(Path('/opt/blots/apps.json').read_text())
+# Apps are optional image layers; list only the ones installed in this image.
+APPS = {key: app for key, app in json.loads(Path('/opt/blots/apps.json').read_text()).items() if not app['command'] or shutil.which(app['command'][0])}
 
 def appearance():
     return json.loads((HOME / 'appearance.json').read_text())
