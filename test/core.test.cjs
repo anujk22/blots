@@ -486,14 +486,15 @@ test('a reasoning output limit pauses without executing even an apparently compl
  try{const run=app.agent.start(chat.id,'Save only when thinking is complete.');await wait(()=>['paused','failed','done'].includes(run.status));assert.equal(run.status,'paused');assert.match(run.error,/thinking plus reply/);assert.equal(run.steps.length,0);assert.equal(run.resumable,true);assert.equal(fs.existsSync(path.join(app.store.workspace,'cut.md')),false);}finally{await app.close();await model.close();}
 });
 
-test('reported token usage triggers pressure compaction even for a short text transcript', async()=>{
+test('a task that reaches its context budget pauses for the user to compact instead of summarizing on its own', async()=>{
  let summaries=0;const model=await fakeModel(request=>{
   if(String(request.messages.at(-1).content).startsWith('Save a factual task checkpoint.')){summaries++;return {content:'Verified one mouse move. Original goal: inspect once. Finish reporting.'};}
   return request.messages.some(m=>m.role==='tool')?{content:'Inspection complete.'}:{tool_calls:[{index:0,id:'move',type:'function',function:{name:'computer_move',arguments:'{"x":400,"y":300}'}}]};
  },{usage:{prompt_tokens:60000,completion_tokens:512,total_tokens:60512}});
  const app=await createServer({port:0,dataDir:temp()});Object.assign(app.store.state.settings,{baseUrl:model.base,model:'test-model',vision:true,contextTokens:65536});app.store.state.bots[0].autoApproveLinux=true;app.computers.guest=async()=>({ok:true});
  const chat={id:crypto.randomUUID(),botId:'blot',title:'test',messages:[]};app.store.state.chats.push(chat);
- try{const run=app.agent.start(chat.id,'Inspect once.');await wait(()=>run.status==='done');assert.equal(summaries,1);assert.equal(run.steps.length,1);}finally{await app.close();await model.close();}
+ try{const run=app.agent.start(chat.id,'Inspect once.');await wait(()=>run.status==='paused');assert.equal(summaries,0);assert.equal(run.contextFull,true);assert.equal(run.steps.length,1);
+  app.agent.compact(chat.id);await wait(()=>!app.agent.active.has(run.id));assert.equal(summaries,1);}finally{await app.close();await model.close();}
 });
 
 test('masking hides old tool output and thinking but keeps every action and the recent rounds intact', () => {
@@ -520,13 +521,13 @@ test('compaction carries saved files, declined actions and the bot notes verbati
    { name: 'computer_exec', arguments: JSON.stringify({ command: 'rm -rf /tmp/x' }) },
   ];
   return decisions < calls.length ? { tool_calls: [{ index: 0, id: 'call-'+decisions, type: 'function', function: calls[decisions++] }] } : { content: 'Done.' };
- }, { usage: { prompt_tokens: 60000, completion_tokens: 100, total_tokens: 60100 } });
+ });
  const app = await createServer({ port: 0, dataDir: temp() }); Object.assign(app.store.state.settings, { baseUrl: model.base, model: 'test-model', contextTokens: 65536 });
  const chat = { id: crypto.randomUUID(), botId: 'blot', title: 'test', messages: [] }; app.store.state.chats.push(chat);
  try {
   const run = app.agent.start(chat.id, 'Track the job deadline.');
   await wait(() => run.status === 'waiting' && run.approval?.tool === 'write_file'); app.agent.approve(run.approval.id, true);
-  await wait(() => run.status === 'waiting' && run.approval?.tool === 'computer_exec'); app.agent.approve(run.approval.id, false);
+  await wait(() => run.status === 'waiting' && run.approval?.tool === 'computer_exec'); app.agent.compact(chat.id); app.agent.approve(run.approval.id, false);
   await wait(() => run.status === 'done');
   const saved = requests.flatMap(r => r.messages).findLast(m => typeof m.content === 'string' && m.content.startsWith('Saved progress'));
   assert.ok(saved, 'compacted transcript sent to the model');
@@ -535,17 +536,17 @@ test('compaction carries saved files, declined actions and the bot notes verbati
  } finally { await app.close(); await model.close(); }
 });
 
-test('pressure compaction reuses the task prefix: same system prompt, same tools, tools disabled for the checkpoint', async () => {
+test('compaction reuses the task prefix: same system prompt, same tools, tools disabled for the checkpoint', async () => {
  const requests = [];
  const model = await fakeModel(request => {
   requests.push(request);
   if (String(request.messages.at(-1).content).startsWith('Save a factual task checkpoint.')) return { content: 'Checkpoint.' };
   return request.messages.some(m => m.role === 'tool') ? { content: 'Done.' } : { tool_calls: [{ index: 0, id: 'list', type: 'function', function: { name: 'list_files', arguments: '{}' } }] };
- }, { usage: { prompt_tokens: 60000, completion_tokens: 10, total_tokens: 60010 } });
+ });
  const app = await createServer({ port: 0, dataDir: temp() }); Object.assign(app.store.state.settings, { baseUrl: model.base, model: 'test-model', contextTokens: 65536 });
  const chat = { id: crypto.randomUUID(), botId: 'blot', title: 'test', messages: [] }; app.store.state.chats.push(chat);
  try {
-  const run = app.agent.start(chat.id, 'List my files.'); await wait(() => run.status === 'done');
+  const run = app.agent.start(chat.id, 'List my files.'); app.agent.compact(chat.id); await wait(() => run.status === 'done');
   const summary = requests.find(r => String(r.messages.at(-1).content).startsWith('Save a factual task checkpoint.')), task = requests[0];
   assert.ok(summary); assert.equal(summary.tool_choice, 'none'); assert.deepEqual(summary.tools, task.tools);
   // Everything the task already sent is an exact prefix of the checkpoint request.

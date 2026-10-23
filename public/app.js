@@ -365,7 +365,9 @@ async function saveComposerSettings(data) {
   finally { composerSaving = false; updateComposerControls(); }
 }
 // The chat and the live thought each follow new output until the reader scrolls up, and follow again once they return to the bottom.
-let followChat = true, lastChatScroll = 0, followThinking = true, lastThinkingScroll = 0;
+// Streamed text revealed so far, per live run; declared before the first render can paint it.
+const stream = { run: '', thinking: 0, draft: 0 };
+let editingMessage = '', followChat = true, lastChatScroll = 0, followThinking = true, lastThinkingScroll = 0;
 function trackChatScroll() {
   const box = $('#messages');
   if (box.scrollTop < lastChatScroll - 1) followChat = false;
@@ -401,7 +403,8 @@ async function sendMessage() {
   pendingSend = true; $('#send').disabled = true;
   try {
     if (!currentChat()) { const chat = await api('/api/chats', { botId: selectedBot }); chatId = chat.id; localStorage.setItem('blots.chat', chatId); }
-    await api('/api/message', { chatId, text, tools: true }); warmedChat = null; prompt.value = ''; prompt.style.height = ''; setChatOpen(true); await refresh();
+    // A full conversation keeps the draft and opens the context controls so it can be compacted.
+    await api('/api/message', { chatId, text, tools: true }).catch(error => { if (/Compact it/.test(error.message) && $('#context-panel').hidden) togglePopover('context'); throw error; }); warmedChat = null; prompt.value = ''; prompt.style.height = ''; setChatOpen(true); await refresh();
   } finally { pendingSend = false; if ($('#send')) $('#send').disabled = false; }
 }
 function updateSendButton() {
@@ -414,7 +417,7 @@ function renderMessages() {
   if (!$('#messages')) return;
   const bot = currentBot(), chat = currentChat(), run = currentRun(), live = run && isLive(run);
   updateSendButton();
-  const signature = JSON.stringify([chat?.messages, run?.id, run?.status, !!run?.draft, !!run?.thinking, run?.activity, run?.approval, run?.error, run?.compacting, run?.plan]);
+  const signature = JSON.stringify([chat?.messages, run?.id, run?.status, !!run?.draft, !!run?.thinking, run?.activity, run?.approval, run?.error, run?.compacting, run?.plan, editingMessage]);
   if (chat?.messageCount && !chat.messages.length) return;
   if (signature === messagesSignature) return; messagesSignature = signature;
   const element = $('#messages');
@@ -425,11 +428,17 @@ function renderMessages() {
   } else if (!chat?.messages.length) {
     element.innerHTML = `<div class="welcome"><div class="welcome-mascot">${avatar(bot, 112)}</div><p class="eyebrow">${esc(bot.name)} · ${esc(bot.role)}</p><h2>What should we<br><em>get done?</em></h2><p class="welcome-sub">${esc(bot.name)} works on its own Linux computer, next door. You can watch, take over, or approve anything risky.</p><div class="starters"><button data-prompt="Search the web for the latest Apple silicon AI tools. Open the most useful sources and summarize them with links.">${icon('search')}<span><strong>Research a topic</strong><small>Search, read sources, cite links</small></span></button><button data-prompt="Help me plan my day. First ask me what I need to get done.">${icon('calendar')}<span><strong>Plan my day</strong><small>Starts by asking what’s on your plate</small></span></button><button data-prompt="Write a short welcome note for Blots and save it as welcome.md in the workspace.">${icon('edit')}<span><strong>Write a note</strong><small>Saved to your workspace</small></span></button></div></div>`;
   } else {
-    element.innerHTML = chat.messages.map(m => `<article class="message ${m.role}${m.steer ? ' steer' : ''}"><div class="message-label">${m.role === 'assistant' ? avatar(bot) + `<strong>${esc(bot.name)}</strong>` : '<strong>You</strong>'}${m.createdAt ? `<time>${new Date(m.createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</time>` : ''}</div>${m.thinking ? `<details class="thought"><summary>Thought process</summary><div class="thought-body">${esc(m.thinking)}</div></details>` : ''}${m.steer ? '<small class="steer-label">Added while working</small>' : ''}<div class="bubble">${m.role === 'user' ? esc(m.content).replaceAll('\n', '<br>') : markdown(m.content)}</div>${m.role === 'assistant' && Number.isFinite(m.metrics?.tokensPerSecond) ? `<small class="response-speed" title="Output tokens per second, including thinking and tool calls, measured from the first generated token.">${m.metrics.tokensPerSecond.toFixed(1)} tok/s</small>` : ''}</article>`).join('');
+    element.innerHTML = chat.messages.map(m => `<article class="message ${m.role}${m.steer ? ' steer' : ''}" data-message="${m.id}"><div class="message-label">${m.role === 'assistant' ? avatar(bot) + `<strong>${esc(bot.name)}</strong>` : '<strong>You</strong>'}${m.createdAt ? `<time>${new Date(m.createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</time>` : ''}</div>${m.thinking ? `<details class="thought"><summary>Thought process</summary><div class="thought-body">${esc(m.thinking)}</div></details>` : ''}${m.steer ? '<small class="steer-label">Added while working</small>' : ''}${m.id === editingMessage ? `<form class="message-editor" id="message-editor"><textarea aria-label="Edit message" rows="3">${esc(m.content)}</textarea><small>Replies after this message will be removed.</small><div class="inline-actions"><button type="button" class="button small secondary" data-cancel-edit>Cancel</button><button class="button small">Send</button></div></form>` : `<div class="bubble">${m.role === 'user' ? esc(m.content).replaceAll('\n', '<br>') : markdown(m.content)}</div>${m.role === 'user' && !live ? `<button class="message-edit" data-edit-message="${m.id}" aria-label="Edit message" title="Edit and resend from here">${icon('edit')}</button>` : ''}`}${m.role === 'assistant' && Number.isFinite(m.metrics?.tokensPerSecond) ? `<small class="response-speed" title="Output tokens per second, including thinking and tool calls, measured from the first generated token.">${m.metrics.tokensPerSecond.toFixed(1)} tok/s</small>` : ''}</article>`).join('');
     const step = run?.steps.at(-1);
     if (live) element.innerHTML += `<div class="live-activity"><span class="live-avatar">${avatar(bot, 30)}</span><div><strong>${esc(run.status === 'queued' ? 'Queued · waiting for your model' : run.approval ? 'Waiting for you' : run.activity || 'Thinking…')}</strong>${step ? `<small>${icon(toolIcon(step.tool))}${esc(humanTool(step.tool))}${stepDetail(step.args) ? ` <code>${esc(stepDetail(step.args))}</code>` : ''}</small>` : ''}</div><span class="live-count">${run.steps.length ? `${run.steps.length} step${run.steps.length === 1 ? '' : 's'}` : ''}</span></div>${run.plan ? planHTML(run.plan) : ''}${run.thinking && run.status === 'running' ? `<details class="thought live"${run.draft ? '' : ' open'}><summary><span class="${run.draft ? '' : 'gloss'}">${run.draft ? 'Thought process' : 'Thinking'}</span></summary><div class="thought-body" id="live-thinking"></div></details>` : ''}${run.draft && !run.compacting ? `<article class="message assistant"><div class="bubble" id="live-draft"></div></article>` : ''}`;
     if (run?.approval) { element.innerHTML += approvalHTML(run.approval); setChatOpen(true); }
-    if (run?.error) element.innerHTML += `<div class="message-error${run.status === 'paused' ? ' paused' : ''}">${esc(run.error)}${['paused', 'failed', 'stopped'].includes(run.status) && (run.resumable || run.steps.length) ? `<br><button class="button small secondary" data-continue="${run.id}">${icon('play')} Continue task</button>` : run.status === 'failed' ? `<br><button class="button small secondary" data-retry>${icon('retry')} Try again</button>` : ''}</div>`;
+    if (run?.error) element.innerHTML += `<div class="message-error${run.status === 'paused' ? ' paused' : ''}">${esc(run.error)}${['paused', 'failed', 'stopped'].includes(run.status) && (run.resumable || run.steps.length) ? `<br><button class="button small secondary" data-continue="${run.id}">${icon('play')} Continue task</button>${run.contextFull ? ` <button class="button small secondary" data-open-context>${icon('compact')} Compact</button>` : ''}` : run.status === 'failed' ? `<br><button class="button small secondary" data-retry>${icon('retry')} Try again</button>` : ''}</div>`;
+  }
+  const editor = $('#message-editor');
+  if (editor) {
+    const input = editor.querySelector('textarea'); input.focus(); input.setSelectionRange(input.value.length, input.value.length);
+    input.onkeydown = event => { if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); editor.requestSubmit(); } if (event.key === 'Escape') { editingMessage = ''; renderMessages(); } };
+    editor.onsubmit = event => { event.preventDefault(); const text = input.value.trim(); if (text) action(async () => { await api('/api/edit-message', { chatId, messageId: editingMessage, text }); editingMessage = ''; followChat = true; await refresh(); }); };
   }
   // Fill the rebuilt live text right away so the chat keeps its height instead of jumping.
   paintLive();
@@ -591,6 +600,9 @@ document.addEventListener('click', event => {
   if (element.dataset.chat) { chatOpen = true; chatId = element.dataset.chat; localStorage.setItem('blots.chat', chatId); showView('chat'); }
   if (element.dataset.prompt) { $('#prompt').value = element.dataset.prompt; $('#prompt').focus(); }
   if (element.dataset.approve || element.dataset.deny) action(async () => { await api('/api/approve', { id: element.dataset.approve || element.dataset.deny, allow: !!element.dataset.approve }); await refresh(); });
+  if (element.dataset.editMessage) { editingMessage = element.dataset.editMessage; renderMessages(); }
+  if ('cancelEdit' in element.dataset) { editingMessage = ''; renderMessages(); }
+  if ('openContext' in element.dataset && $('#context-panel').hidden) togglePopover('context');
   if (element.dataset.continue) action(async () => { await api('/api/resume', { runId: element.dataset.continue }); await refresh(); });
   if ('retry' in element.dataset) { const previous = [...(currentChat()?.messages || [])].reverse().find(m => m.role === 'user'); if (previous) { $('#prompt').value = previous.content; action(sendMessage); } }
   if (element.dataset.openRun) { const chat = state.chats.find(c => c.id === element.dataset.openRun); if (chat) { selectedBot = chat.botId; chatId = chat.id; chatOpen = true; showView('chat'); } }
@@ -612,7 +624,6 @@ window.blotsDesktop?.onNewChat(() => action(() => newChat()));
 await refresh();
 if (state) { showView('chat'); await refreshModels(); }
 // Reveals streamed text a few characters per frame, easing toward what the server has, so replies flow instead of jumping each poll.
-const stream = { run: '', thinking: 0, draft: 0 };
 function streamFrame() {
   requestAnimationFrame(streamFrame);
   if (paintLive() && followChat) $('#messages').scrollTop = $('#messages').scrollHeight;

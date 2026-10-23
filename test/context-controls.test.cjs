@@ -83,3 +83,31 @@ test('manual compaction of a paused task keeps its checkpoint resumable without 
     app.agent.resume(run.id); await until(() => run.status === 'done'); assert.equal(run.steps.length, 1); assert.equal(chat.messages.at(-1).content, 'BLUE42 is verified.');
   } finally { await app.close(); await model.close(); }
 });
+
+test('the whole conversation is sent until it fills the budget, then sending asks for a compact instead of dropping messages', async () => {
+  const requests = []; const model = await modelServer(request => { requests.push(request); return { content: 'Noted.' }; });
+  const app = await createServer({ port: 0, dataDir: temp() });
+  try {
+    Object.assign(app.store.state.settings, settings(model.baseUrl)); const chat = addChat(app);
+    for (let n = 0; n < 40; n++) chat.messages.push({ id: crypto.randomUUID(), role: n % 2 ? 'assistant' : 'user', content: `Message ${n}` });
+    const run = app.agent.start(chat.id, 'What was message 0?'); await until(() => run.status === 'done');
+    assert.match(JSON.stringify(requests.at(-1).messages), /Message 0"/);
+    chat.messages.push({ id: crypto.randomUUID(), role: 'assistant', content: 'x'.repeat(400000) });
+    const before = chat.messages.length;
+    assert.throws(() => app.agent.start(chat.id, 'Anything else?'), /Compact it to keep going/);
+    assert.equal(chat.messages.length, before);
+  } finally { await app.close(); await model.close(); }
+});
+
+test('editing a message removes it and everything after it, then answers the edited text', async () => {
+  const requests = []; const model = await modelServer(request => { requests.push(request); return { content: 'Answer to ' + String(request.messages.at(-1).content).split('\n').at(-1) }; });
+  const app = await createServer({ port: 0, dataDir: temp() });
+  try {
+    Object.assign(app.store.state.settings, settings(model.baseUrl)); const chat = addChat(app);
+    for (const text of ['First', 'Second', 'Third']) { const run = app.agent.start(chat.id, text); await until(() => run.status === 'done'); }
+    const second = chat.messages.find(m => m.content === 'Second');
+    const run = app.agent.edit(chat.id, second.id, 'Second, edited'); await until(() => run.status === 'done');
+    assert.deepEqual(chat.messages.map(m => m.content), ['First', 'Answer to First', 'Second, edited', 'Answer to Second, edited']);
+    assert.doesNotMatch(JSON.stringify(requests.at(-1).messages), /Third/);
+  } finally { await app.close(); await model.close(); }
+});

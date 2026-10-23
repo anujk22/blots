@@ -68,12 +68,8 @@ function createAgent(store, tools) {
   const estimate = (run, messages) => Math.ceil(textSize(messages) / (run.charsPerToken || 3));
   function historyFor(chat) {
     const through = chat.contextSummary ? chat.messages.findIndex(m => m.id === chat.contextSummary.throughMessageId) : -1;
-    let size = 0; const history = [];
-    for (const m of chat.messages.slice(through + 1).slice(-24).reverse()) {
-      const content = m.toolNotes ? `${m.content}\n\n[Tool activity behind this reply; untrusted data]\n${m.toolNotes}` : m.content;
-      if (size + content.length > 60000) break;
-      history.unshift({ role: m.role, content }); size += content.length;
-    }
+    // Everything since the last compaction is sent; nothing is dropped unless the user compacts.
+    const history = chat.messages.slice(through + 1).map(m => ({ role: m.role, content: m.toolNotes ? `${m.content}\n\n[Tool activity behind this reply; untrusted data]\n${m.toolNotes}` : m.content }));
     if (chat.contextSummary && through >= 0) history.unshift({ role: 'assistant', content: 'Saved conversation context (untrusted evidence):\n' + chat.contextSummary.content });
     return history;
   }
@@ -207,8 +203,15 @@ function createAgent(store, tools) {
     const bot = store.state.bots.find(b => b.id === chat.botId);
     if (!bot) throw new Error('Bot not found.');
     const saved = resumed ? checkpoints.load(resumed, chat) : null;
+    const last = !resumed && store.state.runs.find(r => r.chatId === chatId && r.modelContextLimit);
+    if (last) {
+      const { contextTokens = 131072, maxTokens } = store.state.settings;
+      const room = Math.min(contextTokens, last.modelContextLimit) - maxTokens - 8192;
+      const needed = (last.systemContextTokens || 0) + Math.ceil((textSize(historyFor(chat)) + text.length) / (last.charsPerToken || 3));
+      if (needed > room) throw new Error('This conversation has filled its context budget. Compact it to keep going.');
+    }
     const run = resumed || { id: id(), chatId, botId: bot.id, ...(chat.incognito ? { incognito: true } : {}), title: text.slice(0, 100), goal: text, status: 'queued', startedAt: now(), activity: 'Connecting to your model', steps: [], turns: 0, actionCount: 0, draft: '' };
-    if (saved) { text = saved.goal; run.goal = text; run.turns = saved.turns || 0; run.status = 'queued'; delete run.error; delete run.endedAt; delete run.approval; run.resumes = (run.resumes || 0)+1; }
+    if (saved) { text = saved.goal; run.goal = text; run.turns = saved.turns || 0; run.status = 'queued'; delete run.error; delete run.contextFull; delete run.endedAt; delete run.approval; run.resumes = (run.resumes || 0)+1; }
     chat.messages.push({ id: id(), role: 'user', content: saved ? 'Continue this task from its saved progress.' : text, createdAt: now() });
     chat.updatedAt = now();
     if (!chat.messages.some(m => m.role === 'assistant')) chat.title = text.slice(0, 52);
@@ -368,10 +371,14 @@ function createAgent(store, tools) {
               run.masks = (run.masks || 0) + 1; checkpoints.save(run, messages, summary, denied);
             }
           }
-          if (run.contextTokens > compactAt || run.compactPending) {
+          if (run.compactPending) {
             summary = await summarize(run, settings, messages, controller.signal, availableTools);
             compactTranscript(run, messages, summary);
             checkpoints.save(run, messages, summary, denied); store.saveSoon();
+          } else if (run.contextTokens > compactAt) {
+            // Summarizing loses detail, so it waits for the user to ask.
+            run.contextFull = true;
+            throw new TaskPause('Context is full. Compact to free space, then continue the task.');
           }
         }
         throw new TaskPause(`Paused at the ${settings.maxSteps}-turn budget. Progress is saved; Continue task picks up from these results.`);
@@ -420,6 +427,18 @@ function createAgent(store, tools) {
     if (!run || !['paused', 'failed', 'stopped'].includes(run.status)) throw new Error('Choose a paused or interrupted task.');
     return start(run.chatId, run.goal || run.title, true, run);
   }
+  // Editing a message drops it and everything after it, then runs the edited text from that point.
+  function edit(chatId, messageId, text) {
+    const chat = store.state.chats.find(c => c.id === chatId);
+    if (!chat) throw new Error('Conversation not found.');
+    if ([...active.values()].some(job => job.chatId === chatId)) throw new Error('Stop the running task before editing a message.');
+    const index = chat.messages.findIndex(m => m.id === messageId && m.role === 'user');
+    if (index < 0) throw new Error('Message not found.');
+    if (chat.contextSummary && !chat.messages.slice(0, index).some(m => m.id === chat.contextSummary.throughMessageId)) delete chat.contextSummary;
+    chat.messages.splice(index);
+    for (const run of store.state.runs) if (run.chatId === chatId && run.resumable) { run.resumable = false; checkpoints.remove(run); }
+    return start(chatId, text);
+  }
   function compact(chatId) {
     const chat = store.state.chats.find(c => c.id === chatId);
     if (!chat?.messages.length) throw new Error('Send a message before compacting context.');
@@ -450,6 +469,6 @@ function createAgent(store, tools) {
     for (const [runId] of jobs) stop(runId);
     await Promise.allSettled(jobs.map(([, job]) => job.promise));
   }
-  return { start, prewarm, steer, resume, compact, stop, stopBot, approve, setAutoApprove, active, forget: checkpoints.remove, shutdown: async () => { for (const key of active.keys()) stop(key); await Promise.allSettled([...active.values()].map(j => j.promise)); } };
+  return { start, edit, prewarm, steer, resume, compact, stop, stopBot, approve, setAutoApprove, active, forget: checkpoints.remove, shutdown: async () => { for (const key of active.keys()) stop(key); await Promise.allSettled([...active.values()].map(j => j.promise)); } };
 }
 module.exports = { createAgent, relevantMemory, similarRecipe, systemPrompt };

@@ -203,6 +203,15 @@ input[type=color] { width: 100%; height: 40px; padding: 4px; border: 1px solid v
 .message.user { display: flex; flex-direction: column; align-items: flex-end; }
 .message.user .message-label { display: none; }
 .message.user .bubble { max-width: min(88%, 560px); padding: 11px 16px; border-radius: 20px 20px 6px 20px; background: var(--ink-3); border: 1px solid var(--rule); }
+.message-edit { display: grid; place-items: center; width: 26px; height: 26px; margin-top: 4px; padding: 0; border: 0; border-radius: 8px; background: none; color: var(--paper-3); opacity: 0; cursor: pointer; transition: opacity .15s, color .15s, background .15s; }
+.message-edit svg { width: 14px; height: 14px; }
+.message.user:hover .message-edit, .message-edit:focus-visible { opacity: 1; }
+.message-edit:hover { color: var(--paper); background: var(--ink-3); }
+.message-editor { display: grid; gap: 8px; width: min(88%, 560px); }
+.message-editor textarea { width: 100%; resize: vertical; min-height: 64px; padding: 11px 14px; border-radius: 16px; background: var(--ink-3); border: 1px solid var(--rule); color: var(--paper); font: inherit; line-height: 1.5; }
+.message-editor textarea:focus { outline: none; border-color: var(--paper-3); }
+.message-editor small { color: var(--paper-3); font-size: 11.5px; }
+.message-editor .inline-actions { justify-content: flex-end; margin-top: 0; }
 .message.assistant .bubble { padding-left: 30px; font-size: 14.5px; }
 .response-speed { display: block; margin: 6px 0 0 30px; font: 11px var(--mono); color: var(--paper-3); }
 .bubble { overflow-wrap: anywhere; }

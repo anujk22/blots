@@ -140,6 +140,7 @@ async function createServer(options = {}) {
         }
         if (route === '/api/prewarm' && method === 'POST') { const data = await body(req); return json(res, agent.prewarm(data.chatId)); }
         if (route === '/api/message' && method === 'POST') { const data = await body(req); return json(res, agent.start(data.chatId, text(data.text, 'Message'), data.tools !== false)); }
+        if (route === '/api/edit-message' && method === 'POST') { const data = await body(req); return json(res, agent.edit(data.chatId, data.messageId, text(data.text, 'Message'))); }
         if (route === '/api/steer' && method === 'POST') { const data = await body(req); return json(res, agent.steer(data.chatId, text(data.text, 'Message'))); }
         if (route === '/api/resume' && method === 'POST') { const data = await body(req); return json(res, agent.resume(data.runId)); }
         if (route === '/api/compact' && method === 'POST') { const data = await body(req); return json(res, agent.compact(data.chatId)); }
