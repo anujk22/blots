@@ -14,7 +14,7 @@ const icon = name => `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="
 const toolIcon = tool => ({ forget: 'memory', search_web: 'search', browser_open: 'globe', browser_read: 'book', browser_click: 'pointer', browser_type: 'keyboard', write_file: 'save', read_file: 'doc', list_files: 'folder', remember: 'memory', computer_exec: 'terminal', computer_job_start: 'terminal', computer_job_status: 'terminal', computer_job_stop: 'terminal', computer_launch: 'monitor', computer_screenshot: 'camera', computer_click: 'pointer', computer_move: 'pointer', computer_scroll: 'pointer', computer_type: 'keyboard', computer_key: 'keyboard', delegate_task: 'users', schedule_task: 'calendar' }[tool] || 'zap');
 const stepDetail = args => { const value = args?.query ?? args?.url ?? args?.path ?? args?.command ?? args?.app ?? args?.text ?? args?.key ?? args?.job ?? ''; const line = String(value).split('\n')[0]; return line.length > 90 ? line.slice(0, 89) + '…' : line; };
 
-const MASCOTS = ['blot', 'scout', 'quill', 'ro'];
+const MASCOTS = ['blot', 'scout', 'quill', 'ro', 'tangerine'];
 // A bot's chosen mascot; the built-in bots default to their own, others to their initial.
 const face = bot => bot?.icon ?? (MASCOTS.includes(bot?.id) ? bot.id : '');
 const avatar = (bot, size = '') => `<span class="avatar" style="--bot-color:${esc(bot?.color || '#2155ee')};${size ? `--size:${size}px` : ''}">${face(bot) ? `<img src="/avatars/${face(bot)}.png" alt="">` : `<span class="agent-initial">${esc(bot?.name?.slice(0, 1).toUpperCase() || 'B')}</span>`}</span>`;
@@ -372,6 +372,8 @@ function setChatOpen(open) {
 }
 async function sendMessage() {
   if (pendingSend || composerSaving) return;
+  // Sending mid-dictation keeps what was heard so far, including words still settling.
+  if (voice) endVoice();
   const prompt = $('#prompt'), text = prompt.value.trim();
   const running = currentRun();
   if (running && isLive(running)) {
@@ -400,7 +402,9 @@ function renderMessages() {
   const signature = JSON.stringify([chat?.messages, run?.id, run?.status, !!run?.draft, !!run?.thinking, run?.activity, run?.approval, run?.error, run?.compacting, run?.plan]);
   if (chat?.messageCount && !chat.messages.length) return;
   if (signature === messagesSignature) return; messagesSignature = signature;
-  const element = $('#messages'), nearBottom = element.scrollHeight - element.scrollTop - element.clientHeight < 140;
+  // Follow new output only while the reader is at the bottom; opening a different chat starts at its end.
+  const element = $('#messages'), nearBottom = element.scrollHeight - element.scrollTop - element.clientHeight < 140 || element.dataset.chat !== (chat?.id || '');
+  element.dataset.chat = chat?.id || '';
   if (!chat?.messages.length && chat?.incognito) {
     element.innerHTML = `<div class="welcome incognito-welcome"><div class="welcome-mascot">${avatar(bot, 112)}</div><p class="eyebrow">${icon('ghost')} Incognito · ${esc(bot.name)}</p><h2>Just between<br><em>us.</em></h2><p class="welcome-sub">${esc(bot.name)} won’t use or add to its memory here, and this conversation isn’t kept: it disappears when Blots closes. Files saved to the workspace and pages opened on ${esc(bot.name)}’s computer still stay.</p></div>`;
   } else if (!chat?.messages.length) {
@@ -412,7 +416,7 @@ function renderMessages() {
     if (run?.approval) { element.innerHTML += approvalHTML(run.approval); setChatOpen(true); }
     if (run?.error) element.innerHTML += `<div class="message-error${run.status === 'paused' ? ' paused' : ''}">${esc(run.error)}${['paused', 'failed', 'stopped'].includes(run.status) && (run.resumable || run.steps.length) ? `<br><button class="button small secondary" data-continue="${run.id}">${icon('play')} Continue task</button>` : run.status === 'failed' ? `<br><button class="button small secondary" data-retry>${icon('retry')} Try again</button>` : ''}</div>`;
   }
-  if (nearBottom || live) element.scrollTop = element.scrollHeight;
+  if (nearBottom) element.scrollTop = element.scrollHeight;
 }
 function approvalHTML(approval) {
   return `<div class="approval"><div class="approval-head"><span class="approval-icon">${icon(toolIcon(approval.tool))}</span><div><small>Needs your OK</small><strong>${humanTool(approval.tool)}?</strong></div></div><p>Review the action before ${esc(currentBot().name)} carries it out.</p><pre>${esc(approval.tool === 'write_file' ? `${approval.args.path}\n\n${approval.args.content}` : JSON.stringify(approval.args, null, 2))}</pre><div class="approval-actions"><button class="button small" data-approve="${approval.id}">${icon('check')} Allow once</button><button class="button small secondary" data-deny="${approval.id}">Decline</button></div></div>`;

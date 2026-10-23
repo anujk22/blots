@@ -155,7 +155,7 @@ async function createServer(options = {}) {
           const b = data.id ? bot(data.id) : { id: id() };
           b.name = text(data.name, 'Name', 40); b.role = text(data.role, 'Role', 100); b.instructions = text(data.instructions, 'Instructions', 6000);
           b.color = /^#[0-9a-f]{6}$/i.test(data.color) ? data.color : '#2155ee';
-          if (['', 'blot', 'scout', 'quill', 'ro'].includes(data.icon)) b.icon = data.icon;
+          if (['', 'blot', 'scout', 'quill', 'ro', 'tangerine'].includes(data.icon)) b.icon = data.icon;
           if (!data.id) store.state.bots.push(b); store.save(); computers.appearance(b.id); return json(res, b);
         }
         if (route === '/api/bots/delete' && method === 'POST') {

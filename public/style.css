@@ -42,8 +42,7 @@ a:hover { text-decoration-color: var(--wash); }
 /* ── Title bar ─────────────────────────────────────────── */
 .titlebar { height: 44px; display: flex; align-items: center; justify-content: space-between; padding: 0 14px 0 88px; -webkit-app-region: drag; user-select: none; }
 .titlebar button { -webkit-app-region: no-drag; }
-.brand { display: flex; align-items: center; gap: 8px; font: 700 19px/1 var(--display); letter-spacing: -.03em; font-variation-settings: 'opsz' 96; }
-.brand img { width: 24px; height: 24px; filter: drop-shadow(0 2px 8px transparent); }
+.brand { display: flex; align-items: center; font: 700 19px/1 var(--display); letter-spacing: -.03em; font-variation-settings: 'opsz' 96; }
 .title-actions { display: flex; align-items: center; gap: 6px; }
 
 /* ── Shell ─────────────────────────────────────────────── */
