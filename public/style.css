@@ -340,6 +340,12 @@ input[type=color] { width: 100%; height: 40px; padding: 4px; border: 1px solid v
 .composer-select select:focus-visible { box-shadow: none; }
 .approval-select select { position: absolute; inset: 0; width: 100%; max-width: none; opacity: 0; }
 .approval-select[data-auto="true"] { color: var(--sodium); }
+.model-select { color: var(--bot-ink); }
+.reasoning-select[data-off="false"] { color: var(--mint); }
+/* The context ring sits in the card's top-right corner, out of the control row. */
+.composer > .context-control { position: absolute; top: 7px; right: 8px; }
+.composer > .context-control .control-popover { left: auto; right: 0; }
+.composer textarea { padding-right: 30px !important; }
 .reasoning-control, .context-control { position: relative; }
 .control-popover { position: absolute; bottom: calc(100% + 10px); left: 0; z-index: 30; width: 280px; padding: 14px; border-radius: 16px; background: color-mix(in oklab, var(--ink-2) 92%, transparent); backdrop-filter: blur(16px); border: 1px solid var(--rule); box-shadow: 0 24px 60px -20px #000; animation: pop .18s var(--ease) both; }
 .context-sizes { margin: 0 0 12px; }
