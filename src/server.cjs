@@ -11,7 +11,7 @@ const { createComputers } = require('./computer.cjs');
 const { createTools } = require('./tools.cjs');
 const { createAgent } = require('./agent.cjs');
 const { createMac, BLOCKED, BUNDLE } = require('./mac.cjs');
-const { transcribe } = require('./voice.cjs');
+const { streamVoice } = require('./voice.cjs');
 
 async function createServer(options = {}) {
   const dataDir = options.dataDir || process.env.BLOTS_DATA_DIR || path.join(os.homedir(), 'Library', 'Application Support', 'Blots');
@@ -89,11 +89,6 @@ async function createServer(options = {}) {
           const status = await mac.request('status', { prompt: data.prompt === true });
           const apps = (await mac.request('apps')).map(a => ({ ...a, blocked: BLOCKED.has(a.app) }));
           return json(res, { ...status, apps });
-        }
-        if (route === '/api/transcribe' && method === 'POST') {
-          const chunks = []; let size = 0;
-          for await (const chunk of req) { size += chunk.length; if (size > 20000000) throw new Error('Recording too long.'); chunks.push(chunk); }
-          return json(res, { text: await transcribe(Buffer.concat(chunks)) });
         }
         if (route === '/api/models' && method === 'GET') return json(res, { models: await models(store.state.settings) });
         if (route === '/api/settings' && method === 'POST') {
@@ -246,6 +241,7 @@ async function createServer(options = {}) {
   server.on('upgrade', async (req, socket, head) => {
     if (closing || req.headers.origin !== origin || req.headers.host !== new URL(origin).host) return socket.destroy();
     const url = new URL(req.url, origin);
+    if (url.pathname === '/voice') return wss.handleUpgrade(req, socket, head, streamVoice);
     if (url.pathname !== '/vnc') return socket.destroy();
     const botId = url.searchParams.get('bot');
     if (!store.state.bots.some(b => b.id === botId) || !computers.status().some(c => c.botId === botId)) return socket.destroy();

@@ -117,41 +117,67 @@ function deleteChat(id) {
     chatId = ''; await refresh(); if (view === 'chat') showView('chat');
   });
 }
-// Voice input: 16 kHz mono PCM is recorded here and transcribed on-device by the server's SpeechTranscriber binary.
+// Voice input streams 16 kHz mono PCM to the on-device transcriber. Words still settling show grey and italic; settled words turn solid.
 let voice = null;
 function updateVoice() {
   const button = $('#voice'); if (!button) return;
   button.dataset.state = voice ? (voice.stopping ? 'transcribing' : 'recording') : 'idle';
   button.disabled = !!voice?.stopping;
-  button.setAttribute('aria-label', voice ? (voice.stopping ? 'Transcribing' : 'Stop recording and transcribe') : 'Voice input');
+  button.setAttribute('aria-label', voice ? (voice.stopping ? 'Transcribing' : 'Stop voice input') : 'Voice input');
+}
+function joinWords(a, b) { return a && b && !/\s$/.test(a) && !/^\s/.test(b) ? `${a} ${b}` : a + b; }
+function showVoiceText() {
+  const prompt = $('#prompt'); if (!prompt || !voice) return;
+  const settled = joinWords(voice.base, voice.settled), live = voice.live && joinWords(settled, voice.live).slice(settled.length);
+  prompt.value = settled + live; prompt.readOnly = true; prompt.classList.add('dictating'); prompt.dispatchEvent(new Event('input'));
+  let overlay = $('#voice-live');
+  if (!overlay) { overlay = document.createElement('div'); overlay.id = 'voice-live'; overlay.className = 'voice-live'; prompt.after(overlay); }
+  const style = getComputedStyle(prompt);
+  Object.assign(overlay.style, { top: prompt.offsetTop + 'px', left: prompt.offsetLeft + 'px', width: prompt.clientWidth + 'px', height: prompt.clientHeight + 'px', font: style.font, letterSpacing: style.letterSpacing });
+  overlay.innerHTML = `${esc(settled)}<em>${esc(live)}</em>`; overlay.scrollTop = prompt.scrollTop = prompt.scrollHeight;
+}
+function endVoice(error) {
+  if (!voice) return;
+  const { stream, context, socket, timer } = voice, prompt = $('#prompt');
+  clearTimeout(timer); stream.getTracks().forEach(track => track.stop()); context?.close().catch(() => {});
+  if (socket.readyState < 2) socket.close();
+  const text = joinWords(joinWords(voice.base, voice.settled), voice.live);
+  voice = null; $('#voice-live')?.remove(); updateVoice();
+  if (prompt) { prompt.readOnly = false; prompt.classList.remove('dictating'); prompt.value = text; prompt.dispatchEvent(new Event('input')); prompt.focus(); }
+  if (error) toast(error);
 }
 async function toggleVoice() {
   if (voice) return finishVoice();
   const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } });
-  const context = new AudioContext({ sampleRate: 16000 }), source = context.createMediaStreamSource(stream), node = context.createScriptProcessor(4096, 1, 1), chunks = [];
-  node.onaudioprocess = event => chunks.push(new Float32Array(event.inputBuffer.getChannelData(0)));
-  source.connect(node); node.connect(context.destination);
-  voice = { stream, context, chunks, timer: setTimeout(() => action(finishVoice), 5 * 60 * 1000) };
+  const socket = new WebSocket(location.origin.replace(/^http/, 'ws') + '/voice'), prompt = $('#prompt');
+  voice = { stream, socket, base: prompt?.value.trimEnd() || '', settled: '', live: '', timer: setTimeout(finishVoice, 5 * 60 * 1000) };
   updateVoice();
+  socket.onmessage = event => {
+    const result = JSON.parse(event.data); if (!voice) return;
+    if (result.error) return endVoice(result.error);
+    if (typeof result.text !== 'string') return;
+    if (result.final) { voice.settled = joinWords(voice.settled, result.text); voice.live = ''; } else voice.live = result.text;
+    showVoiceText();
+  };
+  socket.onclose = () => endVoice();
+  socket.onopen = async () => {
+    if (!voice) return;
+    const context = voice.context = new AudioContext({ sampleRate: 16000 }), source = context.createMediaStreamSource(stream), node = context.createScriptProcessor(2048, 1, 1);
+    node.onaudioprocess = event => {
+      if (socket.readyState !== 1 || voice?.stopping) return;
+      const samples = event.inputBuffer.getChannelData(0), pcm = new Int16Array(samples.length);
+      for (let i = 0; i < samples.length; i++) pcm[i] = Math.max(-1, Math.min(1, samples[i])) * 0x7fff;
+      socket.send(pcm.buffer);
+    };
+    source.connect(node); node.connect(context.destination);
+  };
 }
-async function finishVoice() {
+// Stopping lets the transcriber settle the last words; the socket closes once it has.
+function finishVoice() {
   if (!voice || voice.stopping) return;
-  const { stream, context, chunks, timer } = voice; voice.stopping = true; clearTimeout(timer); updateVoice();
-  stream.getTracks().forEach(track => track.stop()); await context.close();
-  try {
-    const response = await fetch('/api/transcribe', { method: 'POST', headers: { 'X-Blots': '1', 'Content-Type': 'audio/wav' }, body: wav(chunks, 16000) });
-    const result = await response.json(); if (!response.ok) throw new Error(result.error || 'Transcription failed.');
-    const prompt = $('#prompt');
-    if (result.text && prompt) { prompt.value = (prompt.value.trim() ? prompt.value.trimEnd() + ' ' : '') + result.text; prompt.dispatchEvent(new Event('input')); prompt.focus(); }
-  } finally { voice = null; updateVoice(); }
-}
-function wav(chunks, rate) {
-  const length = chunks.reduce((n, chunk) => n + chunk.length, 0), view = new DataView(new ArrayBuffer(44 + length * 2));
-  const ascii = (at, text) => { for (let i = 0; i < text.length; i++) view.setUint8(at + i, text.charCodeAt(i)); };
-  ascii(0, 'RIFF'); view.setUint32(4, 36 + length * 2, true); ascii(8, 'WAVE'); ascii(12, 'fmt '); view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true);
-  view.setUint32(24, rate, true); view.setUint32(28, rate * 2, true); view.setUint16(32, 2, true); view.setUint16(34, 16, true); ascii(36, 'data'); view.setUint32(40, length * 2, true);
-  let at = 44; for (const chunk of chunks) for (const sample of chunk) { view.setInt16(at, Math.max(-1, Math.min(1, sample)) * 0x7fff, true); at += 2; }
-  return view.buffer;
+  voice.stopping = true; updateVoice(); voice.stream.getTracks().forEach(track => track.stop());
+  if (voice.socket.readyState === 1) voice.socket.send('end'); else endVoice();
+  const current = voice; setTimeout(() => { if (voice === current) endVoice(); }, 10000);
 }
 async function newChat(incognito = false) {
   chatOpen = true;
