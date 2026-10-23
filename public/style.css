@@ -392,7 +392,6 @@ input[type=color] { width: 100%; height: 40px; padding: 4px; border: 1px solid v
 .send-button:hover:not(:disabled) { filter: brightness(1.12); transform: translateY(-1px); }
 .send-button[aria-label="Stop task"] { background: var(--paper); }
 .send-button[aria-label="Stop task"] .icon { width: 13px; height: 13px; fill: currentColor; }
-.composer-caption { display: flex; align-items: center; justify-content: center; gap: 7px; margin-top: 8px; font: 10.5px var(--mono); color: var(--paper-3); }
 .composer-right { flex: none; gap: 6px; }
 .voice-button { width: 34px; height: 34px; flex: none; display: grid; place-items: center; border: 0; border-radius: 50%; background: none; color: var(--paper-2); transition: background .15s, color .15s; }
 .voice-button .icon { width: 17px; height: 17px; }
@@ -442,6 +441,7 @@ input[type=color] { width: 100%; height: 40px; padding: 4px; border: 1px solid v
 .desktop-off .avatar { --size: 64px; margin-bottom: 8px; box-shadow: 0 12px 40px -10px var(--bot-glow); }
 .desktop-off h3 { margin: 0; font: 650 19px var(--display); letter-spacing: -.02em; }
 .desktop-off p { max-width: 340px; margin: 2px 0 14px; color: var(--paper-2); font-size: 13px; }
+.control-row:empty { display: none; }
 .control-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 36px; padding-top: 4px; flex: none; }
 .control-state { display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--paper-2); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .control-state::before { content: ''; width: 7px; height: 7px; flex: none; border-radius: 50%; background: var(--paper-3); }
