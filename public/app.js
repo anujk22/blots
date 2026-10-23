@@ -8,7 +8,7 @@ const iconNames = {
   auto: 'ShieldCheck', plus: 'Plus', arrow: 'ArrowRight', send: 'ArrowUp', stop: 'Square', monitor: 'Monitor', expand: 'Maximize2', collapse: 'Minimize2', close: 'X', edit: 'PenLine',
   trash: 'Trash2', search: 'Search', down: 'ChevronDown', check: 'Check', download: 'Download', folder: 'Folder', doc: 'FileText', terminal: 'SquareTerminal', back: 'ArrowLeft',
   play: 'Play', pause: 'Pause', globe: 'Globe', pointer: 'MousePointer2', keyboard: 'Keyboard', camera: 'Camera', save: 'Save', book: 'BookOpen', users: 'Users', hand: 'Hand',
-  retry: 'RotateCcw', sparkles: 'Sparkles', tune: 'Settings2', zap: 'Zap', link: 'ExternalLink', calendar: 'Clock', ghost: 'Ghost',
+  retry: 'RotateCcw', sparkles: 'Sparkles', tune: 'Settings2', zap: 'Zap', link: 'ExternalLink', calendar: 'Clock', ghost: 'Ghost', more: 'Ellipsis',
 };
 const icon = name => `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${(vendor[iconNames[name]] || vendor.MessageCircle).map(([tag, attrs]) => `<${tag} ${Object.entries(attrs).map(([k, v]) => `${k}="${v}"`).join(' ')}/>`).join('')}</svg>`;
 const toolIcon = tool => ({ forget: 'memory', search_web: 'search', browser_open: 'globe', browser_read: 'book', browser_click: 'pointer', browser_type: 'keyboard', write_file: 'save', read_file: 'doc', list_files: 'folder', remember: 'memory', computer_exec: 'terminal', computer_job_start: 'terminal', computer_job_status: 'terminal', computer_job_stop: 'terminal', computer_launch: 'monitor', computer_screenshot: 'camera', computer_click: 'pointer', computer_move: 'pointer', computer_scroll: 'pointer', computer_type: 'keyboard', computer_key: 'keyboard', delegate_task: 'users', schedule_task: 'calendar' }[tool] || 'zap');
@@ -40,7 +40,7 @@ function markdown(text) {
 let paneShare, paneObserver;
 let composerSaving = false, approvalSaving = false, warmedChat = null;
 let stateETag = '';
-let state, selectedBot = localStorage.getItem('blots.bot') || 'blot', chatId = localStorage.getItem('blots.chat') || '', view = 'chat', modelList = [], connectionError = '', rfb, rfbKey = '', screenError = '', full = false, chatOpen = true, pollBusy = false, refreshAgain = false, messagesSignature = '', listsSignature = '', pendingSend = false, toastTimer, filePath = '.', fileContent, allChats = false, memoryTab = '';
+let state, selectedBot = localStorage.getItem('blots.bot') || 'blot', chatId = localStorage.getItem('blots.chat') || '', view = 'chat', modelList = [], connectionError = '', rfb, rfbKey = '', screenError = '', full = false, chatOpen = true, pollBusy = false, refreshAgain = false, messagesSignature = '', listsSignature = '', pendingSend = false, toastTimer, filePath = '.', fileContent, allChats = false, chatMenu = '', memoryTab = '';
 const isLive = run => ['running', 'waiting', 'queued'].includes(run.status);
 const currentBot = () => state.bots.find(b => b.id === selectedBot) || state.bots[0];
 const currentChat = () => state.chats.find(c => c.id === chatId && c.botId === selectedBot);
@@ -77,12 +77,12 @@ async function refreshModels() {
 const navItems = [['chat', 'Conversations', 'chat'], ['files', 'Files', 'file'], ['memory', 'Memory', 'memory'], ['routines', 'Routines', 'clock'], ['activity', 'Activity', 'activity'], ['settings', 'Settings', 'settings']];
 function renderLists() {
   const live = {}; for (const run of state.runs) if (isLive(run)) { live[run.botId] = run.status; live[run.chatId] = run.status; }
-  const signature = JSON.stringify([state.bots, state.chats.map(c => [c.id, c.title]), selectedBot, chatId, view, live, allChats]);
+  const signature = JSON.stringify([state.bots, state.chats.map(c => [c.id, c.title]), selectedBot, chatId, view, live, allChats, chatMenu]);
   if (signature === listsSignature) return; listsSignature = signature;
   document.documentElement.style.setProperty('--bot', currentBot().color || '#2155ee');
   $('#navigation').innerHTML = navItems.map(([key, label, name]) => `<button data-view="${key}" aria-label="${label}" class="${view === key ? 'selected' : ''}">${icon(name)}<span>${label}</span></button>`).join('');
   // Conversations are listed under the agent they belong to; the selected agent's list is open.
-  const chatsFor = b => { const chats = state.chats.filter(c => c.botId === b.id); return `<div class="agent-chats"><div class="agent-chat-actions"><button class="chat-list-item new-chat" data-new-chat="">${icon('plus')}<span>New chat</span></button><button class="icon-button" data-new-chat="incognito" title="New incognito chat" aria-label="New incognito chat">${icon('ghost')}</button></div>${(allChats ? chats : chats.slice(0, 8)).map(c => `<button class="chat-list-item ${c.id === chatId ? 'selected' : ''}${c.incognito ? ' incognito' : ''}" data-chat="${c.id}" data-state="${live[c.id] || 'idle'}" title="${esc(c.title)}${c.incognito ? ' · Incognito' : ''}">${c.incognito ? icon('ghost') : ''}<span>${esc(c.title)}</span></button>`).join('')}${chats.length > 8 ? `<button class="chat-list-item more" data-all-chats>${allChats ? 'Show fewer' : `Show all ${chats.length}`}</button>` : ''}</div>`; };
+  const chatsFor = b => { const chats = state.chats.filter(c => c.botId === b.id); return `<div class="agent-chats"><div class="agent-chat-actions"><button class="chat-list-item new-chat" data-new-chat="">${icon('plus')}<span>New chat</span></button><button class="icon-button" data-new-chat="incognito" title="New incognito chat" aria-label="New incognito chat">${icon('ghost')}</button></div>${(allChats ? chats : chats.slice(0, 8)).map(c => `<div class="chat-row${chatMenu === c.id ? ' menu-open' : ''}"><button class="chat-list-item ${c.id === chatId ? 'selected' : ''}${c.incognito ? ' incognito' : ''}" data-chat="${c.id}" data-state="${live[c.id] || 'idle'}" title="${esc(c.title)}${c.incognito ? ' · Incognito' : ''}">${c.incognito ? icon('ghost') : ''}<span>${esc(c.title)}</span></button><button class="icon-button chat-more" data-chat-menu="${c.id}" aria-label="More for ${esc(c.title)}" aria-haspopup="menu" aria-expanded="${chatMenu === c.id}">${icon('more')}</button>${chatMenu === c.id ? `<div class="chat-menu" role="menu"><button role="menuitem" data-delete-chat="${c.id}">${icon('trash')}<span>Delete</span></button></div>` : ''}</div>`).join('')}${chats.length > 8 ? `<button class="chat-list-item more" data-all-chats>${allChats ? 'Show fewer' : `Show all ${chats.length}`}</button>` : ''}</div>`; };
   $('#bots').innerHTML = state.bots.map(b => `<div class="agent-group${selectedBot === b.id ? ' open' : ''}"><button class="bot-item ${selectedBot === b.id ? 'selected' : ''}" data-bot="${b.id}" data-state="${live[b.id] || 'idle'}" style="--bot-color:${esc(b.color)}" aria-label="${esc(b.name)}${live[b.id] ? ` · ${live[b.id] === 'waiting' ? 'needs you' : 'working'}` : ''}"><div class="bot-avatar">${avatar(b)}</div><div class="bot-text"><strong>${esc(b.name)}</strong><small>${live[b.id] === 'waiting' ? 'Needs you' : live[b.id] === 'queued' ? 'Waiting for the model' : live[b.id] ? 'Working…' : esc(b.role)}</small></div></button>${selectedBot === b.id ? chatsFor(b) : ''}</div>`).join('');
 }
 function destroyScreen() { if (rfb) { rfb.disconnect(); rfb = null; } rfbKey = ''; }
@@ -98,6 +98,13 @@ function showView(next) {
 async function selectBot(value) {
   allChats = allChats && selectedBot === value; selectedBot = value; chatOpen = true; screenError = ''; localStorage.setItem('blots.bot', value);
   chatId = state.chats.find(c => c.botId === value)?.id || ''; localStorage.setItem('blots.chat', chatId); showView('chat');
+}
+function deleteChat(id) {
+  confirmDialog('Delete this conversation?', 'This removes its messages and activity from Blots.', async () => {
+    await api('/api/chats/delete', { id });
+    if (id !== chatId) { await refresh(); return; }
+    chatId = ''; await refresh(); if (view === 'chat') showView('chat');
+  });
 }
 async function newChat(incognito = false) {
   chatOpen = true;
@@ -142,7 +149,7 @@ function renderChat() {
   $('#prompt').oninput = () => { updateSendButton(); if (chatId && warmedChat !== chatId && $('#prompt').value.trim()) { warmedChat = chatId; api('/api/prewarm', { chatId }).catch(() => {}); } const input = $('#prompt'); input.style.height = 'auto'; input.style.height = Math.min(input.scrollHeight, 110) + 'px'; if (full) $('#computer-pane').style.bottom = $('.composer-wrap').getBoundingClientRect().height + 'px'; };
   $('#prompt').onkeydown = event => { if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); action(sendMessage); } };
   $('#new-chat').onclick = () => action(() => newChat()); $('#new-incognito').onclick = () => action(() => newChat(true)); $('#edit-bot').onclick = () => botDialog(bot);
-  $('#delete-chat').onclick = () => { if (currentChat()) confirmDialog('Delete this conversation?', 'This removes its messages and activity from Blots.', async () => { await api('/api/chats/delete', { id: chatId }); chatId = ''; await refresh(); showView('chat'); }); };
+  $('#delete-chat').onclick = () => { if (currentChat()) deleteChat(chatId); };
   $('#expand-computer').onclick = () => { full = !full; $('.chat-layout').classList.toggle('computer-expanded', full); $('#computer-pane').classList.toggle('computer-full', full); $('#computer-pane').style.bottom = full ? $('.composer-wrap').getBoundingClientRect().height + 'px' : ''; $('#expand-computer').innerHTML = icon(full ? 'collapse' : 'expand'); $('#expand-computer').setAttribute('aria-label', full ? 'Collapse computer' : 'Expand computer'); if (rfb) rfb.scaleViewport = true; };
   $('#computer-tab').onclick = () => { $('#activity-panel').classList.remove('visible'); $('#computer-work').style.display = 'flex'; $('#computer-tab').classList.add('selected'); $('#activity-tab').classList.remove('selected'); updateComputer(); };
   $('#activity-tab').onclick = () => { $('#activity-panel').classList.add('visible'); $('#computer-work').style.display = 'none'; $('#computer-tab').classList.remove('selected'); $('#activity-tab').classList.add('selected'); destroyScreen(); };
@@ -475,14 +482,17 @@ async function refreshMemory() {
   $('#ram-panel').innerHTML = `<div class="popover-heading"><strong>Memory</strong><output data-pressure="${memory.pressure}">${{ normal: 'Pressure normal', warning: 'Pressure high', critical: 'Pressure critical' }[memory.pressure]}</output></div><dl class="ram-rows"><div><dt><i class="wired"></i>Wired</dt><dd>${gb(memory.wired)} GB</dd></div><div><dt><i class="apps"></i>Apps</dt><dd>${gb(memory.apps)} GB</dd></div><div><dt><i class="compressed"></i>Compressed</dt><dd>${gb(memory.compressed)} GB</dd></div><div><dt><i></i>Available</dt><dd>${gb(Math.max(0, memory.total - used))} GB</dd></div></dl><small>Wired holds the loaded model, the GPU and macOS. Apps includes the bots’ Linux desktops. Rising compressed memory means the Mac is running short.</small>`;
 }
 $('#ram-toggle').onclick = () => togglePopover('ram');
-document.addEventListener('keydown', event => { if (event.key === 'Escape') for (const name of ['context', 'reasoning', 'ram']) if ($('#' + name + '-panel') && !$('#' + name + '-panel').hidden) togglePopover(name); });
+document.addEventListener('keydown', event => { if (event.key === 'Escape' && chatMenu) { chatMenu = ''; renderLists(); } if (event.key === 'Escape') for (const name of ['context', 'reasoning', 'ram']) if ($('#' + name + '-panel') && !$('#' + name + '-panel').hidden) togglePopover(name); });
 document.addEventListener('click', event => {
   for (const name of ['context', 'reasoning', 'ram']) if ($('#' + name + '-panel') && !$('#' + name + '-panel').hidden && !event.target.closest('.' + name + '-control')) togglePopover(name);
+  if (chatMenu && !event.target.closest('.chat-more, .chat-menu')) { chatMenu = ''; renderLists(); }
   const element = event.target.closest('button,a'); if (!element) return;
   if (element.dataset.view) showView(element.dataset.view);
   if (element.dataset.bot) action(() => selectBot(element.dataset.bot));
   if (element.dataset.contextSize) action(() => saveComposerSettings({ contextTokens: Number(element.dataset.contextSize) }));
   if (element.dataset.newChat !== undefined) action(() => newChat(element.dataset.newChat === 'incognito'));
+  if (element.dataset.chatMenu) { chatMenu = chatMenu === element.dataset.chatMenu ? '' : element.dataset.chatMenu; renderLists(); }
+  if (element.dataset.deleteChat) { chatMenu = ''; renderLists(); deleteChat(element.dataset.deleteChat); }
   if ('allChats' in element.dataset) { allChats = !allChats; renderLists(); }
   if (element.dataset.chat) { chatOpen = true; chatId = element.dataset.chat; localStorage.setItem('blots.chat', chatId); showView('chat'); }
   if (element.dataset.prompt) { $('#prompt').value = element.dataset.prompt; $('#prompt').focus(); }

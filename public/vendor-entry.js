@@ -24,5 +24,5 @@ for (const [name, language] of Object.entries({ bash, javascript, typescript, py
 export {
   MessageCircle, FolderOpen, Brain, CalendarClock, Activity, SlidersHorizontal, Cpu, Lightbulb, ShieldCheck, Zap, Plus, ArrowRight, ArrowUp, Square,
   Monitor, Maximize2, Minimize2, X, PenLine, Trash2, Search, ChevronDown, Check, Download, Folder, FileText, SquareTerminal, ArrowLeft, Play, Pause,
-  PanelLeft, Globe, MousePointer2, Keyboard, Camera, Save, BookOpen, Users, Clock, Hand, CircleStop, RotateCcw, Sparkles, Settings2, Copy, ExternalLink, Ghost,
+  PanelLeft, Globe, MousePointer2, Keyboard, Camera, Save, BookOpen, Users, Clock, Hand, CircleStop, RotateCcw, Sparkles, Settings2, Copy, ExternalLink, Ghost, Ellipsis,
 } from 'lucide';
