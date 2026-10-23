@@ -11,17 +11,6 @@ const { createComputers } = require('./computer.cjs');
 const { createTools } = require('./tools.cjs');
 const { createAgent } = require('./agent.cjs');
 const { createMac, BLOCKED, BUNDLE } = require('./mac.cjs');
-const { execFile } = require('node:child_process');
-
-// Memory as Activity Monitor counts it: app memory, wired (which holds GPU and model weights on Apple silicon) and compressed.
-async function memoryUse() {
-  const total = os.totalmem();
-  if (process.platform !== 'darwin') return { total, apps: total - os.freemem(), wired: 0, compressed: 0, pressure: 'normal' };
-  const run = (file, args) => new Promise((resolve, reject) => execFile(file, args, { timeout: 3000 }, (error, stdout) => error ? reject(error) : resolve(stdout)));
-  const [vm, level] = await Promise.all([run('/usr/bin/vm_stat', []), run('/usr/sbin/sysctl', ['-n', 'kern.memorystatus_vm_pressure_level'])]);
-  const page = Number(vm.match(/page size of (\d+)/)[1]), pages = name => Number(vm.match(new RegExp(name + ':\\s+(\\d+)'))?.[1] || 0) * page;
-  return { total, apps: pages('Anonymous pages') - pages('Pages purgeable'), wired: pages('Pages wired down'), compressed: pages('Pages occupied by compressor'), pressure: { 2: 'warning', 4: 'critical' }[level.trim()] || 'normal' };
-}
 
 async function createServer(options = {}) {
   const dataDir = options.dataDir || process.env.BLOTS_DATA_DIR || path.join(os.homedir(), 'Library', 'Application Support', 'Blots');
@@ -100,7 +89,6 @@ async function createServer(options = {}) {
           const apps = (await mac.request('apps')).map(a => ({ ...a, blocked: BLOCKED.has(a.app) }));
           return json(res, { ...status, apps });
         }
-        if (route === '/api/system' && method === 'GET') return json(res, { memory: await memoryUse() });
         if (route === '/api/models' && method === 'GET') return json(res, { models: await models(store.state.settings) });
         if (route === '/api/settings' && method === 'POST') {
           const data = await body(req), s = { ...store.state.settings };

@@ -64,12 +64,12 @@ async function refresh() {
     stateETag = response.headers.get('ETag') || ''; state = next;
     if (!state.bots.some(b => b.id === selectedBot)) selectedBot = state.bots[0].id; renderLists(); if (view === 'chat') { renderMessages(); updateComputer(); renderActivity(); updateComposerControls(); } if (view === 'settings') updateBuild(); if (view === 'activity') renderAllActivity();
   }
-  catch (error) { connectionError = error.message; $('#connection').textContent = 'Blots disconnected'; $('#connection').classList.add('offline'); }
+  catch (error) { connectionError = error.message; }
   finally { pollBusy = false; if (refreshAgain) { refreshAgain = false; refresh(); } }
 }
 async function refreshModels() {
-  try { modelList = (await api('/api/models')).models; connectionError = ''; if (!state.settings.model && modelList[0]) { await api('/api/settings', { model: modelList[0].id }); await refresh(); } $('#connection').textContent = modelList.length ? 'Local model' : 'Load a local model'; $('#connection').classList.toggle('offline', !modelList.length); }
-  catch (error) { connectionError = error.message; $('#connection').textContent = 'Model server offline'; $('#connection').classList.add('offline'); }
+  try { modelList = (await api('/api/models')).models; connectionError = ''; if (!state.settings.model && modelList[0]) { await api('/api/settings', { model: modelList[0].id }); await refresh(); } }
+  catch (error) { connectionError = error.message; }
   if (view === 'settings') populateModels();
   updateComposerControls();
 }
@@ -470,21 +470,9 @@ function confirmDialog(title, description, callback) { formDialog(title, `<p cla
 function botDialog(bot) {
   formDialog(bot ? 'Make this bot yours.' : 'Meet your next bot.', `<div class="form-grid"><div class="field"><label for="bot-name">Name</label><input id="bot-name" required maxlength="40" value="${esc(bot?.name || '')}" placeholder="Piper"></div><div class="field"><label for="bot-color">Color</label><input id="bot-color" type="color" value="${esc(bot?.color || '#2155ee')}" style="height:43px;padding:5px"></div></div><div class="field"><label for="bot-role">Role</label><input id="bot-role" required maxlength="100" value="${esc(bot?.role || '')}" placeholder="Research assistant"></div><div class="field"><label for="bot-instructions">How should this bot work?</label><textarea id="bot-instructions" required rows="5" maxlength="6000" placeholder="Research carefully, compare sources, and keep answers concise.">${esc(bot?.instructions || '')}</textarea></div>`, async () => { const saved = await api('/api/bots', { ...(bot ? { id: bot.id } : {}), name: $('#bot-name').value, color: $('#bot-color').value, role: $('#bot-role').value, instructions: $('#bot-instructions').value }); await refresh(); await selectBot(saved.id); }, bot ? 'Save bot' : 'Create bot');
 }
-// Unified memory in the title bar: wired holds the loaded model on Apple silicon, so it grows and shrinks as models load and unload.
-const gb = bytes => (bytes / 2 ** 30).toFixed(bytes >= 10 * 2 ** 30 ? 0 : 1);
-async function refreshMemory() {
-  let memory; try { ({ memory } = await api('/api/system')); } catch { return; }
-  const used = memory.wired + memory.apps + memory.compressed, share = bytes => `${Math.min(100, bytes / memory.total * 100)}%`;
-  $('#ram-wired').style.width = share(memory.wired); $('#ram-apps').style.width = share(memory.apps); $('#ram-compressed').style.width = share(memory.compressed);
-  $('#ram-text').textContent = `${gb(used)} / ${gb(memory.total)} GB`;
-  $('#ram-toggle').dataset.pressure = memory.pressure;
-  $('#ram-toggle').setAttribute('aria-label', `Memory use: ${gb(used)} of ${gb(memory.total)} GB, pressure ${memory.pressure}`);
-  $('#ram-panel').innerHTML = `<div class="popover-heading"><strong>Memory</strong><output data-pressure="${memory.pressure}">${{ normal: 'Pressure normal', warning: 'Pressure high', critical: 'Pressure critical' }[memory.pressure]}</output></div><dl class="ram-rows"><div><dt><i class="wired"></i>Wired</dt><dd>${gb(memory.wired)} GB</dd></div><div><dt><i class="apps"></i>Apps</dt><dd>${gb(memory.apps)} GB</dd></div><div><dt><i class="compressed"></i>Compressed</dt><dd>${gb(memory.compressed)} GB</dd></div><div><dt><i></i>Available</dt><dd>${gb(Math.max(0, memory.total - used))} GB</dd></div></dl><small>Wired holds the loaded model, the GPU and macOS. Apps includes the bots’ Linux desktops. Rising compressed memory means the Mac is running short.</small>`;
-}
-$('#ram-toggle').onclick = () => togglePopover('ram');
-document.addEventListener('keydown', event => { if (event.key === 'Escape' && chatMenu) { chatMenu = ''; renderLists(); } if (event.key === 'Escape') for (const name of ['context', 'reasoning', 'ram']) if ($('#' + name + '-panel') && !$('#' + name + '-panel').hidden) togglePopover(name); });
+document.addEventListener('keydown', event => { if (event.key === 'Escape' && chatMenu) { chatMenu = ''; renderLists(); } if (event.key === 'Escape') for (const name of ['context', 'reasoning']) if ($('#' + name + '-panel') && !$('#' + name + '-panel').hidden) togglePopover(name); });
 document.addEventListener('click', event => {
-  for (const name of ['context', 'reasoning', 'ram']) if ($('#' + name + '-panel') && !$('#' + name + '-panel').hidden && !event.target.closest('.' + name + '-control')) togglePopover(name);
+  for (const name of ['context', 'reasoning']) if ($('#' + name + '-panel') && !$('#' + name + '-panel').hidden && !event.target.closest('.' + name + '-control')) togglePopover(name);
   if (chatMenu && !event.target.closest('.chat-more, .chat-menu')) { chatMenu = ''; renderLists(); }
   const element = event.target.closest('button,a'); if (!element) return;
   if (element.dataset.view) showView(element.dataset.view);
@@ -539,4 +527,3 @@ requestAnimationFrame(streamFrame);
 async function poll() { await refresh(); setTimeout(poll, document.hidden ? 5000 : state?.runs.some(isLive) ? 700 : 2000); }
 document.addEventListener('visibilitychange', () => { if (view === 'chat') updateComputer(); if (!document.hidden) { refresh(); refreshModels(); } });
 setTimeout(poll, 1000); setInterval(() => { if (!document.hidden) refreshModels(); }, 30000);
-refreshMemory(); setInterval(() => { if (!document.hidden) refreshMemory(); }, 4000);
