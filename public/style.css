@@ -348,8 +348,33 @@ input[type=color] { width: 100%; height: 40px; padding: 4px; border: 1px solid v
 .composer textarea { padding-right: 30px !important; }
 .reasoning-control, .context-control { position: relative; }
 .control-popover { position: absolute; bottom: calc(100% + 10px); left: 0; z-index: 30; width: 280px; padding: 14px; border-radius: 16px; background: color-mix(in oklab, var(--ink-2) 92%, transparent); backdrop-filter: blur(16px); border: 1px solid var(--rule); box-shadow: 0 24px 60px -20px #000; animation: pop .18s var(--ease) both; }
-.context-sizes { margin: 0 0 12px; }
-.context-sizes button { flex: 1; }
+.context-panel { width: 264px; background: var(--ink-2); }
+.context-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 10px; }
+.context-head strong { font: 600 26px/1 var(--display); letter-spacing: -.02em; color: var(--paper); font-variant-numeric: tabular-nums; }
+.context-head span { font: 11px var(--mono); color: var(--paper-3); }
+.context-control { --level: var(--bot-ink); }
+.context-control[data-level="high"] { --level: var(--sodium); }
+.context-control[data-level="full"] { --level: var(--rose); }
+.context-bar { height: 8px; margin-bottom: 14px; border-radius: 99px; background: var(--ink-0); box-shadow: inset 0 0 0 1px var(--rule-soft); overflow: hidden; }
+#context-bar-fill { display: block; height: 100%; min-width: 4px; border-radius: inherit; background: var(--level); transition: width .55s var(--ease), background .3s; }
+.context-sizes { position: relative; margin: 0 0 12px; }
+.context-sizes button { position: relative; z-index: 1; flex: 1; background: none !important; box-shadow: none !important; transition: color .2s, transform .12s; }
+.context-sizes button:active:not(:disabled) { transform: scale(.94); }
+.context-sizes button:disabled { opacity: .35; }
+.segmented-thumb { position: absolute; top: 3px; bottom: 3px; left: 3px; width: calc((100% - 6px) / 3); border-radius: 8px; background: var(--ink-3); box-shadow: 0 1px 0 color-mix(in oklab, white 8%, transparent) inset, 0 4px 12px -6px #000; transform: translateX(calc(var(--i, 1) * 100%)); transition: transform .32s cubic-bezier(.3, 1.4, .5, 1); }
+.compact-row { display: flex; align-items: center; gap: 10px; padding-top: 12px; border-top: 1px solid var(--rule-soft); }
+#compact-context { display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 12px; border: 1px solid color-mix(in oklab, var(--sodium) 35%, var(--rule)); border-radius: 9px; background: color-mix(in oklab, var(--sodium) 8%, transparent); color: var(--sodium); font-size: 12.5px; font-weight: 600; }
+#compact-context .icon { width: 14px; height: 14px; }
+#compact-context:hover:not(:disabled) { background: color-mix(in oklab, var(--sodium) 16%, transparent); }
+#compact-context:disabled { opacity: .45; }
+.compact-row small { margin: 0 !important; font: 11px var(--mono) !important; }
+.compact-confirm { display: none; }
+.compact-row.confirming { flex-wrap: wrap; }
+.compact-row.confirming > #compact-context, .compact-row.confirming > small { display: none; }
+.compact-row.confirming .compact-confirm { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; width: 100%; animation: pop .15s var(--ease) both; }
+.compact-confirm p { grid-column: 1 / -1; margin: 0 !important; color: var(--paper-2); font-size: 12px; }
+.compact-confirm button { height: 30px; border: 1px solid var(--rule); border-radius: 9px; background: var(--ink-3); font-size: 12.5px; }
+#compact-go { border-color: transparent; background: var(--sodium); color: var(--ink-0); font-weight: 600; }
 .popover-heading { display: flex; justify-content: space-between; margin-bottom: 10px; }
 .popover-heading output { font: 500 12px var(--mono); color: var(--bot-ink); }
 .reasoning-ticks { position: relative; height: 18px; margin: 4px 8px 12px; font: 10px var(--mono); color: var(--paper-3); }
@@ -362,7 +387,7 @@ input[type=color] { width: 100%; height: 40px; padding: 4px; border: 1px solid v
 .context-meter:hover { background: var(--ink-3); }
 .context-meter svg { width: 15px; height: 15px; fill: none; stroke-width: 2; stroke-linecap: round; transform: rotate(-90deg); }
 .context-track { stroke: currentColor; opacity: .35; }
-#context-fill { stroke: var(--bot-ink); stroke-dasharray: 0 100; transition: stroke-dasharray .5s var(--ease); }
+#context-fill { stroke: var(--level); stroke-dasharray: 0 100; transition: stroke-dasharray .5s var(--ease); }
 .send-button { width: 36px; height: 36px; flex: none; display: grid; place-items: center; border: 0; border-radius: 50%; background: var(--bot-ink); color: var(--ink-0); box-shadow: 0 6px 18px -6px var(--bot-glow); transition: transform .15s var(--ease), filter .15s; }
 .send-button .icon { width: 18px; height: 18px; stroke-width: 2.4; }
 .send-button:hover:not(:disabled) { filter: brightness(1.12); transform: translateY(-1px); }
