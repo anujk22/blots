@@ -334,15 +334,12 @@ input[type=color] { width: 100%; height: 40px; padding: 4px; border: 1px solid v
 .composer-select .icon { width: 15px; height: 15px; }
 .composer-select select { min-height: 0 !important; width: auto; max-width: 160px; height: 30px; padding: 0 16px 0 0 !important; border: 0 !important; background-color: transparent; background-position: right 0 center; font-size: 12.5px; text-overflow: ellipsis; cursor: pointer; }
 .composer-controls > * { flex: none; }
-.model-select { flex: 0 1 auto; padding: 0 6px; }
-.model-select select { width: 100%; max-width: 120px; font-size: 11.5px; color: var(--paper-3); }
-.model-select:hover select { color: var(--paper); }
+/* Every left-hand control is the same 30px icon button; the selects sit invisibly on top. */
+.composer-controls .composer-select, .context-meter { width: 30px; justify-content: center; padding: 0; }
+.model-select select { position: absolute; inset: 0; width: 100%; max-width: none; opacity: 0; }
 .composer-select select:focus-visible { box-shadow: none; }
 .approval-select select { position: absolute; inset: 0; width: 100%; max-width: none; opacity: 0; }
-.approval-select::after { font: 500 11px var(--mono); }
 .approval-select[data-auto="true"] { color: var(--sodium); }
-.approval-select[data-auto="true"]::after { content: 'Auto'; font-weight: 700; }
-.approval-select[data-auto="false"]::after { content: 'Ask'; }
 .reasoning-control, .context-control { position: relative; }
 .control-popover { position: absolute; bottom: calc(100% + 10px); left: 0; z-index: 30; width: 280px; padding: 14px; border-radius: 16px; background: color-mix(in oklab, var(--ink-2) 92%, transparent); backdrop-filter: blur(16px); border: 1px solid var(--rule); box-shadow: 0 24px 60px -20px #000; animation: pop .18s var(--ease) both; }
 .context-sizes { margin: 0 0 12px; }
@@ -355,10 +352,10 @@ input[type=color] { width: 100%; height: 40px; padding: 4px; border: 1px solid v
 .control-popover > button:hover:not(:disabled) { background: var(--ink-4); }
 .control-popover p { margin: 6px 0 12px; color: var(--paper-2); font-size: 12px; }
 .control-popover small { display: block; margin-top: 8px; color: var(--paper-3); font-size: 11.5px; }
-.context-meter { display: inline-flex; align-items: center; gap: 5px; height: 30px; padding: 0 8px; border: 0; border-radius: 9px; background: none; color: var(--paper-3); font: 11px var(--mono); }
+.context-meter { display: inline-flex; align-items: center; height: 30px; border: 0; border-radius: 9px; background: none; color: var(--paper-2); }
 .context-meter:hover { background: var(--ink-3); }
-.context-meter svg { width: 26px; height: 16px; fill: none; stroke-width: 3.2; stroke-linecap: round; }
-.context-track { stroke: var(--ink-4); }
+.context-meter svg { width: 15px; height: 15px; fill: none; stroke-width: 2; stroke-linecap: round; transform: rotate(-90deg); }
+.context-track { stroke: currentColor; opacity: .35; }
 #context-fill { stroke: var(--bot-ink); stroke-dasharray: 0 100; transition: stroke-dasharray .5s var(--ease); }
 .send-button { width: 36px; height: 36px; flex: none; display: grid; place-items: center; border: 0; border-radius: 50%; background: var(--bot-ink); color: var(--ink-0); box-shadow: 0 6px 18px -6px var(--bot-glow); transition: transform .15s var(--ease), filter .15s; }
 .send-button .icon { width: 18px; height: 18px; stroke-width: 2.4; }
