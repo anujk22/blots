@@ -1,4 +1,4 @@
-/* Blots — ink. Warm near-black surfaces and cream type; the selected bot's color (--bot) is the accent and tints the light. */
+/* Blots — ink. Warm near-black surfaces and cream type; the selected bot's color (--bot) is the accent. */
 @font-face { font-family: 'Bricolage'; src: url(/fonts/bricolage-grotesque-latin-opsz-normal.woff2) format('woff2-variations'); font-weight: 200 800; font-display: swap; }
 @font-face { font-family: 'Instrument Sans'; src: url(/fonts/instrument-sans-latin-wdth-normal.woff2) format('woff2-variations'); font-weight: 400 700; font-stretch: 75% 100%; font-display: swap; }
 @font-face { font-family: 'JetBrains Mono'; src: url(/fonts/jetbrains-mono-latin-wght-normal.woff2) format('woff2-variations'); font-weight: 100 800; font-display: swap; }
@@ -25,7 +25,7 @@ html, body { height: 100%; }
 body {
   margin: 0; overflow: hidden; color: var(--paper); font: 14px/1.55 var(--body); letter-spacing: .005em;
   -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
-  background: radial-gradient(1200px 600px at 70% -10%, color-mix(in oklab, var(--bot) 9%, transparent), transparent 70%), radial-gradient(900px 500px at -10% 110%, color-mix(in oklab, var(--wash) 4%, transparent), transparent 70%), var(--ink-0);
+  background: var(--ink-0);
 }
 ::selection { background: color-mix(in oklab, var(--bot-ink) 35%, transparent); color: white; }
 button, input, select, textarea { font: inherit; color: inherit; }
