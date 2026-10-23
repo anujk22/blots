@@ -224,7 +224,7 @@ function renderChat() {
   $('#close-chat').onclick = () => setChatOpen(false);
   $('#composer').onsubmit = event => { event.preventDefault(); action(sendMessage); };
   $('#voice').onclick = () => action(toggleVoice);
-  $('#messages').onscroll = trackChatScroll;
+  $('#messages').onscroll = trackChatScroll; $('#messages').onwheel = event => { if (event.deltaY < 0 && !event.target.closest('.thought-body')) followChat = false; };
   $('#prompt').oninput = () => { updateSendButton(); if (chatId && warmedChat !== chatId && $('#prompt').value.trim()) { warmedChat = chatId; api('/api/prewarm', { chatId }).catch(() => {}); } const input = $('#prompt'); input.style.height = 'auto'; input.style.height = Math.min(input.scrollHeight, 110) + 'px'; if (full) $('#computer-pane').style.bottom = $('.composer-wrap').getBoundingClientRect().height + 'px'; };
   $('#prompt').onkeydown = event => { if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); action(sendMessage); } };
   $('#new-chat').onclick = () => action(() => newChat()); $('#new-incognito').onclick = () => action(() => newChat(true)); $('#edit-bot').onclick = () => botDialog(bot);
@@ -364,13 +364,19 @@ async function saveComposerSettings(data) {
   try { await api('/api/settings', data); await refresh(); }
   finally { composerSaving = false; updateComposerControls(); }
 }
-// The chat follows new output until the reader scrolls up, and follows again once they return to the bottom.
-let followChat = true, lastChatScroll = 0;
+// The chat and the live thought each follow new output until the reader scrolls up, and follow again once they return to the bottom.
+let followChat = true, lastChatScroll = 0, followThinking = true, lastThinkingScroll = 0;
 function trackChatScroll() {
   const box = $('#messages');
   if (box.scrollTop < lastChatScroll - 1) followChat = false;
   if (box.scrollHeight - box.scrollTop - box.clientHeight < 8) followChat = true;
   lastChatScroll = box.scrollTop;
+}
+function trackThinkingScroll(event) {
+  const box = event.currentTarget;
+  if (box.scrollTop < lastThinkingScroll - 1) followThinking = false;
+  if (box.scrollHeight - box.scrollTop - box.clientHeight < 8) followThinking = true;
+  lastThinkingScroll = box.scrollTop;
 }
 function setChatOpen(open) {
   chatOpen = open;
@@ -425,7 +431,9 @@ function renderMessages() {
     if (run?.approval) { element.innerHTML += approvalHTML(run.approval); setChatOpen(true); }
     if (run?.error) element.innerHTML += `<div class="message-error${run.status === 'paused' ? ' paused' : ''}">${esc(run.error)}${['paused', 'failed', 'stopped'].includes(run.status) && (run.resumable || run.steps.length) ? `<br><button class="button small secondary" data-continue="${run.id}">${icon('play')} Continue task</button>` : run.status === 'failed' ? `<br><button class="button small secondary" data-retry>${icon('retry')} Try again</button>` : ''}</div>`;
   }
-  if (followChat) element.scrollTop = element.scrollHeight;
+  // Fill the rebuilt live text right away so the chat keeps its height instead of jumping.
+  paintLive();
+  if (followChat) element.scrollTop = element.scrollHeight; else element.scrollTop = lastChatScroll;
 }
 function approvalHTML(approval) {
   return `<div class="approval"><div class="approval-head"><span class="approval-icon">${icon(toolIcon(approval.tool))}</span><div><small>Needs your OK</small><strong>${humanTool(approval.tool)}?</strong></div></div><p>Review the action before ${esc(currentBot().name)} carries it out.</p><pre>${esc(approval.tool === 'write_file' ? `${approval.args.path}\n\n${approval.args.content}` : JSON.stringify(approval.args, null, 2))}</pre><div class="approval-actions"><button class="button small" data-approve="${approval.id}">${icon('check')} Allow once</button><button class="button small secondary" data-deny="${approval.id}">Decline</button></div></div>`;
@@ -607,19 +615,27 @@ if (state) { showView('chat'); await refreshModels(); }
 const stream = { run: '', thinking: 0, draft: 0 };
 function streamFrame() {
   requestAnimationFrame(streamFrame);
-  const run = view === 'chat' && currentRun(); if (!run) return;
-  if (stream.run !== run.id) Object.assign(stream, { run: run.id, thinking: 0, draft: 0 });
-  const box = $('#messages'); let changed = false;
+  if (paintLive() && followChat) $('#messages').scrollTop = $('#messages').scrollHeight;
+}
+function paintLive() {
+  const run = view === 'chat' && currentRun(); if (!run) return false;
+  if (stream.run !== run.id) { Object.assign(stream, { run: run.id, thinking: 0, draft: 0 }); followThinking = true; lastThinkingScroll = 0; }
+  let changed = false;
   for (const [key, render] of [['thinking', esc], ['draft', text => markdown(text).trimEnd().replace(/(<\/(?:p|li|h[1-6])>(?:\s*<\/[uo]l>)*)?$/, '<span class="stream-caret"></span>$1')]]) {
     const target = run[key] || '', element = document.getElementById('live-' + key);
     if (stream[key] > target.length) stream[key] = 0;
     stream[key] = Math.min(target.length, stream[key] + Math.max(1, Math.ceil((target.length - stream[key]) / 30)));
     if (!element || element.dataset.shown === String(stream[key])) continue;
+    const fresh = !element.dataset.shown;
     element.dataset.shown = stream[key]; element.innerHTML = render(target.slice(0, stream[key])); changed = true;
-    // Keep the newest reasoning in view; the top fades only once earlier text has scrolled away.
-    if (key === 'thinking') { element.scrollTop = element.scrollHeight; element.classList.toggle('overflowing', element.scrollHeight > element.clientHeight); }
+    // Keep the newest reasoning in view unless the reader has scrolled up in it; the top fades only once earlier text has scrolled away.
+    if (key === 'thinking') {
+      if (fresh) { element.onscroll = trackThinkingScroll; element.onwheel = event => { if (event.deltaY < 0) followThinking = false; }; }
+      element.scrollTop = followThinking ? element.scrollHeight : lastThinkingScroll;
+      element.classList.toggle('overflowing', element.scrollHeight > element.clientHeight);
+    }
   }
-  if (changed && followChat) box.scrollTop = box.scrollHeight;
+  return changed;
 }
 requestAnimationFrame(streamFrame);
 async function poll() { await refresh(); setTimeout(poll, document.hidden ? 5000 : state?.runs.some(isLive) ? 700 : 2000); }
