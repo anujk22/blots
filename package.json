@@ -11,7 +11,7 @@
     "dev": "node src/server.cjs",
     "test": "node --test test/*.test.cjs",
     "build": "npm run vendor && npm run mac:build && electron-builder --mac dir --arm64",
-    "mac:build": "swiftc -O mac/helper.swift -o mac/blots-mac",
+    "mac:build": "swiftc -O mac/helper.swift -o mac/blots-mac && swiftc -O -parse-as-library mac/transcribe.swift -o mac/blots-transcribe",
     "vendor": "esbuild public/vendor-entry.js --bundle --format=esm --minify --outfile=public/vendor.js",
     "computer:build": "docker build -t blots-computer:1.0 computer",
     "computer:build:full": "docker build --build-arg FULL_APPS=1 -t blots-computer:1.0 computer"
@@ -44,10 +44,13 @@
       "assets/**",
       "package.json",
       "computer/**",
-      "mac/blots-mac"
+      "mac/blots-mac",
+      "mac/blots-transcribe"
     ],
     "asarUnpack": [
-      "mac/blots-mac"
+      "computer/**",
+      "mac/blots-mac",
+      "mac/blots-transcribe"
     ],
     "asar": true,
     "npmRebuild": false,
@@ -62,10 +65,10 @@
       ],
       "icon": "assets/icon.icns",
       "category": "public.app-category.productivity",
-      "identity": null
-    },
-    "asarUnpack": [
-      "computer/**"
-    ]
+      "identity": null,
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "Blots uses the microphone for voice input. Speech is transcribed on this Mac."
+      }
+    }
   }
 }

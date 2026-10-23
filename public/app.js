@@ -8,13 +8,16 @@ const iconNames = {
   auto: 'ShieldCheck', plus: 'Plus', arrow: 'ArrowRight', send: 'ArrowUp', stop: 'Square', monitor: 'Monitor', expand: 'Maximize2', collapse: 'Minimize2', close: 'X', edit: 'PenLine',
   trash: 'Trash2', search: 'Search', down: 'ChevronDown', check: 'Check', download: 'Download', folder: 'Folder', doc: 'FileText', terminal: 'SquareTerminal', back: 'ArrowLeft',
   play: 'Play', pause: 'Pause', globe: 'Globe', pointer: 'MousePointer2', keyboard: 'Keyboard', camera: 'Camera', save: 'Save', book: 'BookOpen', users: 'Users', hand: 'Hand',
-  retry: 'RotateCcw', sparkles: 'Sparkles', tune: 'Settings2', zap: 'Zap', link: 'ExternalLink', calendar: 'Clock', ghost: 'Ghost', more: 'Ellipsis',
+  retry: 'RotateCcw', sparkles: 'Sparkles', tune: 'Settings2', zap: 'Zap', link: 'ExternalLink', calendar: 'Clock', ghost: 'Ghost', more: 'Ellipsis', mic: 'Mic',
 };
 const icon = name => `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${(vendor[iconNames[name]] || vendor.MessageCircle).map(([tag, attrs]) => `<${tag} ${Object.entries(attrs).map(([k, v]) => `${k}="${v}"`).join(' ')}/>`).join('')}</svg>`;
 const toolIcon = tool => ({ forget: 'memory', search_web: 'search', browser_open: 'globe', browser_read: 'book', browser_click: 'pointer', browser_type: 'keyboard', write_file: 'save', read_file: 'doc', list_files: 'folder', remember: 'memory', computer_exec: 'terminal', computer_job_start: 'terminal', computer_job_status: 'terminal', computer_job_stop: 'terminal', computer_launch: 'monitor', computer_screenshot: 'camera', computer_click: 'pointer', computer_move: 'pointer', computer_scroll: 'pointer', computer_type: 'keyboard', computer_key: 'keyboard', delegate_task: 'users', schedule_task: 'calendar' }[tool] || 'zap');
 const stepDetail = args => { const value = args?.query ?? args?.url ?? args?.path ?? args?.command ?? args?.app ?? args?.text ?? args?.key ?? args?.job ?? ''; const line = String(value).split('\n')[0]; return line.length > 90 ? line.slice(0, 89) + '…' : line; };
 
-const avatar = (bot, size = '') => `<span class="avatar" style="--bot-color:${esc(bot?.color || '#2155ee')};${size ? `--size:${size}px` : ''}">${['blot', 'scout', 'quill', 'ro'].includes(bot?.id) ? `<img src="/avatars/${bot.id}.png" alt="">` : `<span class="agent-initial">${esc(bot?.name?.slice(0, 1).toUpperCase() || 'B')}</span>`}</span>`;
+const MASCOTS = ['blot', 'scout', 'quill', 'ro'];
+// A bot's chosen mascot; the built-in bots default to their own, others to their initial.
+const face = bot => bot?.icon ?? (MASCOTS.includes(bot?.id) ? bot.id : '');
+const avatar = (bot, size = '') => `<span class="avatar" style="--bot-color:${esc(bot?.color || '#2155ee')};${size ? `--size:${size}px` : ''}">${face(bot) ? `<img src="/avatars/${face(bot)}.png" alt="">` : `<span class="agent-initial">${esc(bot?.name?.slice(0, 1).toUpperCase() || 'B')}</span>`}</span>`;
 const date = value => new Date(value).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 const humanTool = value => ({ forget: 'Forget a memory', search_web: 'Search the web', browser_open: 'Open a page', browser_read: 'Read a page', browser_click: 'Click on a page', browser_type: 'Enter text', write_file: 'Save a file', read_file: 'Read a file', list_files: 'List files', remember: 'Save a memory', computer_exec: 'Run a command', computer_launch: 'Open an app', computer_screenshot: 'See the desktop', computer_click: 'Click the desktop', computer_move: 'Move the mouse', computer_scroll: 'Scroll the desktop', computer_type: 'Type on the desktop', computer_key: 'Press a key', computer_job_start: 'Start a long command', computer_job_status: 'Check a long command', computer_job_stop: 'Stop a long command', delegate_task: 'Delegate to a bot', schedule_task: 'Schedule a task' }[value] || value);
 
@@ -82,8 +85,8 @@ function renderLists() {
   document.documentElement.style.setProperty('--bot', currentBot().color || '#2155ee');
   $('#navigation').innerHTML = navItems.map(([key, label, name]) => `<button data-view="${key}" aria-label="${label}" class="${view === key ? 'selected' : ''}">${icon(name)}<span>${label}</span></button>`).join('');
   // Conversations are listed under the agent they belong to; the selected agent's list is open.
-  const chatsFor = b => { const chats = state.chats.filter(c => c.botId === b.id); return `<div class="agent-chats"><div class="agent-chat-actions"><button class="chat-list-item new-chat" data-new-chat="">${icon('plus')}<span>New chat</span></button><button class="icon-button" data-new-chat="incognito" title="New incognito chat" aria-label="New incognito chat">${icon('ghost')}</button></div>${(allChats ? chats : chats.slice(0, 8)).map(c => `<div class="chat-row${chatMenu === c.id ? ' menu-open' : ''}"><button class="chat-list-item ${c.id === chatId ? 'selected' : ''}${c.incognito ? ' incognito' : ''}" data-chat="${c.id}" data-state="${live[c.id] || 'idle'}" title="${esc(c.title)}${c.incognito ? ' · Incognito' : ''}">${c.incognito ? icon('ghost') : ''}<span>${esc(c.title)}</span></button><button class="icon-button chat-more" data-chat-menu="${c.id}" aria-label="More for ${esc(c.title)}" aria-haspopup="menu" aria-expanded="${chatMenu === c.id}">${icon('more')}</button>${chatMenu === c.id ? `<div class="chat-menu" role="menu"><button role="menuitem" data-delete-chat="${c.id}">${icon('trash')}<span>Delete</span></button></div>` : ''}</div>`).join('')}${chats.length > 8 ? `<button class="chat-list-item more" data-all-chats>${allChats ? 'Show fewer' : `Show all ${chats.length}`}</button>` : ''}</div>`; };
-  $('#bots').innerHTML = state.bots.map(b => `<div class="agent-group${selectedBot === b.id ? ' open' : ''}"><button class="bot-item ${selectedBot === b.id ? 'selected' : ''}" data-bot="${b.id}" data-state="${live[b.id] || 'idle'}" style="--bot-color:${esc(b.color)}" aria-label="${esc(b.name)}${live[b.id] ? ` · ${live[b.id] === 'waiting' ? 'needs you' : 'working'}` : ''}"><div class="bot-avatar">${avatar(b)}</div><div class="bot-text"><strong>${esc(b.name)}</strong><small>${live[b.id] === 'waiting' ? 'Needs you' : live[b.id] === 'queued' ? 'Waiting for the model' : live[b.id] ? 'Working…' : esc(b.role)}</small></div></button>${selectedBot === b.id ? chatsFor(b) : ''}</div>`).join('');
+  const chatsFor = b => { const chats = state.chats.filter(c => c.botId === b.id); return `<div class="agent-chats"><div class="agent-chat-actions"><button class="chat-list-item new-chat" data-new-chat="">${icon('plus')}<span>New chat</span></button><button class="icon-button" data-new-chat="incognito" title="New incognito chat" aria-label="New incognito chat">${icon('ghost')}</button></div>${(allChats ? chats : chats.slice(0, 8)).map(c => `<div class="chat-row${chatMenu === c.id ? ' menu-open' : ''}"><button class="chat-list-item ${c.id === chatId ? 'selected' : ''}${c.incognito ? ' incognito' : ''}" data-chat="${c.id}" data-state="${live[c.id] || 'idle'}" title="${esc(c.title)}${c.incognito ? ' · Incognito' : ''}">${c.incognito ? icon('ghost') : ''}<span>${esc(c.title)}</span></button><button class="icon-button chat-more" data-chat-menu="${c.id}" aria-label="More for ${esc(c.title)}" aria-haspopup="menu" aria-expanded="${chatMenu === c.id}">${icon('more')}</button>${chatMenu === c.id ? `<div class="chat-menu" role="menu"><button role="menuitem" class="danger" data-delete-chat="${c.id}">${icon('trash')}<span>Delete</span></button></div>` : ''}</div>`).join('')}${chats.length > 8 ? `<button class="chat-list-item more" data-all-chats>${allChats ? 'Show fewer' : `Show all ${chats.length}`}</button>` : ''}</div>`; };
+  $('#bots').innerHTML = state.bots.map(b => `<div class="agent-group${selectedBot === b.id ? ' open' : ''}"><button class="bot-item ${selectedBot === b.id ? 'selected' : ''}" data-bot="${b.id}" data-state="${live[b.id] || 'idle'}" style="--bot-color:${esc(b.color)}" aria-label="${esc(b.name)}${live[b.id] ? ` · ${live[b.id] === 'waiting' ? 'needs you' : 'working'}` : ''}"><div class="bot-avatar">${avatar(b)}</div><div class="bot-text"><strong>${esc(b.name)}</strong><small>${live[b.id] === 'waiting' ? 'Needs you' : live[b.id] === 'queued' ? 'Waiting for the model' : live[b.id] ? 'Working…' : esc(b.role)}</small></div></button><button class="icon-button chat-more bot-more" data-chat-menu="bot:${b.id}" aria-label="More for ${esc(b.name)}" aria-haspopup="menu" aria-expanded="${chatMenu === 'bot:' + b.id}">${icon('more')}</button>${chatMenu === 'bot:' + b.id ? `<div class="chat-menu bot-menu" role="menu"><button role="menuitem" data-edit-bot="${b.id}">${icon('settings')}<span>Manage</span></button><button role="menuitem" class="danger" data-delete-bot="${b.id}" ${state.bots.length <= 1 ? 'disabled' : ''}>${icon('trash')}<span>Delete</span></button></div>` : ''}${selectedBot === b.id ? chatsFor(b) : ''}</div>`).join('');
 }
 function destroyScreen() { if (rfb) { rfb.disconnect(); rfb = null; } rfbKey = ''; }
 function showView(next) {
@@ -99,12 +102,56 @@ async function selectBot(value) {
   allChats = allChats && selectedBot === value; selectedBot = value; chatOpen = true; screenError = ''; localStorage.setItem('blots.bot', value);
   chatId = state.chats.find(c => c.botId === value)?.id || ''; localStorage.setItem('blots.chat', chatId); showView('chat');
 }
+function deleteBot(id) {
+  const bot = state.bots.find(b => b.id === id);
+  confirmDialog(`Delete ${esc(bot.name)}?`, 'This removes the bot with its conversations, memories, learned routes and routines.', async () => {
+    await api('/api/bots/delete', { id });
+    if (selectedBot === id) { selectedBot = state.bots.find(b => b.id !== id).id; localStorage.setItem('blots.bot', selectedBot); chatId = ''; }
+    await refresh(); if (view === 'chat') showView('chat');
+  });
+}
 function deleteChat(id) {
   confirmDialog('Delete this conversation?', 'This removes its messages and activity from Blots.', async () => {
     await api('/api/chats/delete', { id });
     if (id !== chatId) { await refresh(); return; }
     chatId = ''; await refresh(); if (view === 'chat') showView('chat');
   });
+}
+// Voice input: 16 kHz mono PCM is recorded here and transcribed on-device by the server's SpeechTranscriber binary.
+let voice = null;
+function updateVoice() {
+  const button = $('#voice'); if (!button) return;
+  button.dataset.state = voice ? (voice.stopping ? 'transcribing' : 'recording') : 'idle';
+  button.disabled = !!voice?.stopping;
+  button.setAttribute('aria-label', voice ? (voice.stopping ? 'Transcribing' : 'Stop recording and transcribe') : 'Voice input');
+}
+async function toggleVoice() {
+  if (voice) return finishVoice();
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } });
+  const context = new AudioContext({ sampleRate: 16000 }), source = context.createMediaStreamSource(stream), node = context.createScriptProcessor(4096, 1, 1), chunks = [];
+  node.onaudioprocess = event => chunks.push(new Float32Array(event.inputBuffer.getChannelData(0)));
+  source.connect(node); node.connect(context.destination);
+  voice = { stream, context, chunks, timer: setTimeout(() => action(finishVoice), 5 * 60 * 1000) };
+  updateVoice();
+}
+async function finishVoice() {
+  if (!voice || voice.stopping) return;
+  const { stream, context, chunks, timer } = voice; voice.stopping = true; clearTimeout(timer); updateVoice();
+  stream.getTracks().forEach(track => track.stop()); await context.close();
+  try {
+    const response = await fetch('/api/transcribe', { method: 'POST', headers: { 'X-Blots': '1', 'Content-Type': 'audio/wav' }, body: wav(chunks, 16000) });
+    const result = await response.json(); if (!response.ok) throw new Error(result.error || 'Transcription failed.');
+    const prompt = $('#prompt');
+    if (result.text && prompt) { prompt.value = (prompt.value.trim() ? prompt.value.trimEnd() + ' ' : '') + result.text; prompt.dispatchEvent(new Event('input')); prompt.focus(); }
+  } finally { voice = null; updateVoice(); }
+}
+function wav(chunks, rate) {
+  const length = chunks.reduce((n, chunk) => n + chunk.length, 0), view = new DataView(new ArrayBuffer(44 + length * 2));
+  const ascii = (at, text) => { for (let i = 0; i < text.length; i++) view.setUint8(at + i, text.charCodeAt(i)); };
+  ascii(0, 'RIFF'); view.setUint32(4, 36 + length * 2, true); ascii(8, 'WAVE'); ascii(12, 'fmt '); view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true);
+  view.setUint32(24, rate, true); view.setUint32(28, rate * 2, true); view.setUint16(32, 2, true); view.setUint16(34, 16, true); ascii(36, 'data'); view.setUint32(40, length * 2, true);
+  let at = 44; for (const chunk of chunks) for (const sample of chunk) { view.setInt16(at, Math.max(-1, Math.min(1, sample)) * 0x7fff, true); at += 2; }
+  return view.buffer;
 }
 async function newChat(incognito = false) {
   chatOpen = true;
@@ -129,7 +176,7 @@ function renderChat() {
         <div class="control-row" id="control-row"></div>
       </div><div class="activity-panel" id="activity-panel"></div>
     </section>
-    <div class="composer-wrap"><form class="composer" id="composer"><textarea id="prompt" aria-label="Message your bot" placeholder="${incognito ? 'Incognito with' : 'Message'} ${esc(bot.name)}…" rows="1"></textarea><div class="composer-bottom"><div class="composer-controls"><label class="composer-select approval-select" title="Action approval">${icon('auto')}<select id="approval-mode" aria-label="Action approval"><option value="ask">Ask before computer and workspace actions</option><option value="auto">Auto-approve computer and workspace actions</option></select></label><label class="composer-select" title="Local model">${icon('model')}<select id="composer-model" aria-label="Model"></select></label><div class="reasoning-control"><button class="composer-select reasoning-select" id="reasoning-toggle" type="button" aria-label="Reasoning level" aria-expanded="false" aria-controls="reasoning-panel">${icon('reasoning')}</button><div class="control-popover" id="reasoning-panel" hidden><div class="popover-heading"><strong>Reasoning</strong><output id="reasoning-current"></output></div><input id="composer-reasoning" type="range" min="0" max="0" step="1" aria-label="Reasoning level"><div class="reasoning-ticks" id="reasoning-ticks"></div><button type="button" id="reasoning-default">Use model default</button><label class="tool-toggle adaptive-toggle"><input id="adaptive-thinking" type="checkbox"> Adaptive: think only when it helps</label><small id="adaptive-note">Skips thinking on routine steps, such as after a tool succeeds. Thinks again after errors, new requests and before finishing.</small></div></div></div><div class="composer-right"><div class="context-control"><button type="button" class="context-meter" id="context-toggle" aria-label="Context usage" aria-expanded="false" aria-controls="context-panel"><svg viewBox="0 0 32 19" aria-hidden="true"><path class="context-track" d="M3 16a13 13 0 0 1 26 0"/><path id="context-fill" d="M3 16a13 13 0 0 1 26 0" pathLength="100"/></svg><span id="context-percent">—</span></button><div class="control-popover" id="context-panel" hidden><div class="popover-heading"><strong>Context budget</strong></div><div class="segmented context-sizes" role="radiogroup" aria-label="Task context budget">${[[65536, '64k'], [131072, '128k'], [262144, '256k']].map(([tokens, label]) => `<button type="button" role="radio" data-context-size="${tokens}">${label}</button>`).join('')}</div><strong id="context-amount">Context usage</strong><p id="context-description"></p><button type="button" id="compact-context">Compact context</button><small id="compact-status"></small></div></div><button class="send-button" id="send" aria-label="Send message">${icon('send')}</button></div></div></form><div class="composer-caption"><span class="caption-dot"></span>Local model · messages and files stay on this Mac</div></div>
+    <div class="composer-wrap"><form class="composer" id="composer"><textarea id="prompt" aria-label="Message your bot" placeholder="${incognito ? 'Incognito with' : 'Message'} ${esc(bot.name)}…" rows="1"></textarea><div class="composer-bottom"><div class="composer-controls"><label class="composer-select approval-select" title="Action approval">${icon('auto')}<select id="approval-mode" aria-label="Action approval"><option value="ask">Ask before computer and workspace actions</option><option value="auto">Auto-approve computer and workspace actions</option></select></label><label class="composer-select model-select" title="Local model"><select id="composer-model" aria-label="Model"></select></label><div class="reasoning-control"><button class="composer-select reasoning-select" id="reasoning-toggle" type="button" aria-label="Reasoning level" aria-expanded="false" aria-controls="reasoning-panel">${icon('reasoning')}</button><div class="control-popover" id="reasoning-panel" hidden><div class="popover-heading"><strong>Reasoning</strong><output id="reasoning-current"></output></div><input id="composer-reasoning" type="range" min="0" max="0" step="1" aria-label="Reasoning level"><div class="reasoning-ticks" id="reasoning-ticks"></div><button type="button" id="reasoning-default">Use model default</button><label class="tool-toggle adaptive-toggle"><input id="adaptive-thinking" type="checkbox"> Adaptive: think only when it helps</label><small id="adaptive-note">Skips thinking on routine steps, such as after a tool succeeds. Thinks again after errors, new requests and before finishing.</small></div></div><div class="context-control"><button type="button" class="context-meter" id="context-toggle" aria-label="Context usage" aria-expanded="false" aria-controls="context-panel"><svg viewBox="0 0 32 19" aria-hidden="true"><path class="context-track" d="M3 16a13 13 0 0 1 26 0"/><path id="context-fill" d="M3 16a13 13 0 0 1 26 0" pathLength="100"/></svg><span id="context-percent"></span></button><div class="control-popover" id="context-panel" hidden><div class="popover-heading"><strong>Context budget</strong></div><div class="segmented context-sizes" role="radiogroup" aria-label="Task context budget">${[[65536, '64k'], [131072, '128k'], [262144, '256k']].map(([tokens, label]) => `<button type="button" role="radio" data-context-size="${tokens}">${label}</button>`).join('')}</div><strong id="context-amount">Context usage</strong><p id="context-description"></p><button type="button" id="compact-context">Compact context</button><small id="compact-status"></small></div></div></div><div class="composer-right"><button type="button" class="voice-button" id="voice" aria-label="Voice input" title="Voice input · transcribed on this Mac" data-state="${voice ? (voice.stopping ? 'transcribing' : 'recording') : 'idle'}">${icon('mic')}</button><button class="send-button" id="send" aria-label="Send message">${icon('send')}</button></div></div></form><div class="composer-caption">Local model · messages and files stay on this Mac</div></div>
   </div>`;
   setupPaneResize();
   $('#approval-mode').onchange = event => action(() => saveAutoApproval(event.target.value === 'auto'));
@@ -146,6 +193,7 @@ function renderChat() {
   $('#close-computer').onclick = () => action(async () => { const button = $('#close-computer'); button.dataset.closing = 'true'; button.disabled = true; destroyScreen(); try { await api('/api/computer/stop', { botId: selectedBot }); screenError = ''; await refresh(); } finally { delete button.dataset.closing; if (button.isConnected) updateComputer(); } });
   $('#close-chat').onclick = () => setChatOpen(false);
   $('#composer').onsubmit = event => { event.preventDefault(); action(sendMessage); };
+  $('#voice').onclick = () => action(toggleVoice);
   $('#prompt').oninput = () => { updateSendButton(); if (chatId && warmedChat !== chatId && $('#prompt').value.trim()) { warmedChat = chatId; api('/api/prewarm', { chatId }).catch(() => {}); } const input = $('#prompt'); input.style.height = 'auto'; input.style.height = Math.min(input.scrollHeight, 110) + 'px'; if (full) $('#computer-pane').style.bottom = $('.composer-wrap').getBoundingClientRect().height + 'px'; };
   $('#prompt').onkeydown = event => { if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); action(sendMessage); } };
   $('#new-chat').onclick = () => action(() => newChat()); $('#new-incognito').onclick = () => action(() => newChat(true)); $('#edit-bot').onclick = () => botDialog(bot);
@@ -217,7 +265,7 @@ function updateContextMeter() {
   const run = currentRun(), budget = run?.contextBudget || state.settings.contextTokens || 131072, used = run?.contextTokens;
   const known = Number.isFinite(used), percent = known ? Math.min(100, Math.round(used / budget * 100)) : 0;
   $('#context-fill').style.strokeDasharray = `${percent} 100`;
-  $('#context-percent').textContent = known ? `${percent}%` : '—';
+  $('#context-percent').textContent = known ? `${percent}%` : '';
   $('#context-toggle').title = known ? `${run.contextEstimated ? 'Estimated' : 'Reported'} context: ${used.toLocaleString()} / ${budget.toLocaleString()} tokens` : 'Context usage appears after a task starts';
   $('#context-toggle').setAttribute('aria-label', known ? `Context usage: ${percent} percent` : 'Context usage');
   $('#context-amount').textContent = known ? `${run.contextEstimated ? '≈ ' : ''}${used.toLocaleString()} / ${budget.toLocaleString()} tokens` : 'No task context yet';
@@ -468,7 +516,7 @@ function formDialog(title, fields, save, saveLabel = 'Save') {
 }
 function confirmDialog(title, description, callback) { formDialog(title, `<p class="intro">${esc(description)}</p>`, callback, 'Delete'); }
 function botDialog(bot) {
-  formDialog(bot ? 'Make this bot yours.' : 'Meet your next bot.', `<div class="form-grid"><div class="field"><label for="bot-name">Name</label><input id="bot-name" required maxlength="40" value="${esc(bot?.name || '')}" placeholder="Piper"></div><div class="field"><label for="bot-color">Color</label><input id="bot-color" type="color" value="${esc(bot?.color || '#2155ee')}" style="height:43px;padding:5px"></div></div><div class="field"><label for="bot-role">Role</label><input id="bot-role" required maxlength="100" value="${esc(bot?.role || '')}" placeholder="Research assistant"></div><div class="field"><label for="bot-instructions">How should this bot work?</label><textarea id="bot-instructions" required rows="5" maxlength="6000" placeholder="Research carefully, compare sources, and keep answers concise.">${esc(bot?.instructions || '')}</textarea></div>`, async () => { const saved = await api('/api/bots', { ...(bot ? { id: bot.id } : {}), name: $('#bot-name').value, color: $('#bot-color').value, role: $('#bot-role').value, instructions: $('#bot-instructions').value }); await refresh(); await selectBot(saved.id); }, bot ? 'Save bot' : 'Create bot');
+  formDialog(bot ? 'Make this bot yours.' : 'Meet your next bot.', `<div class="form-grid"><div class="field"><label for="bot-name">Name</label><input id="bot-name" required maxlength="40" value="${esc(bot?.name || '')}" placeholder="Piper"></div><div class="field"><label for="bot-color">Color</label><input id="bot-color" type="color" value="${esc(bot?.color || '#2155ee')}" style="height:43px;padding:5px"></div></div><fieldset class="icon-picker"><legend>Icon</legend>${['', ...MASCOTS].map(m => `<label title="${m ? m[0].toUpperCase() + m.slice(1) : 'Initial'}"><input type="radio" name="bot-icon" value="${m}" ${face(bot) === m ? 'checked' : ''}>${avatar({ name: bot?.name || 'B', color: bot?.color, icon: m }, 40)}</label>`).join('')}</fieldset><div class="field"><label for="bot-role">Role</label><input id="bot-role" required maxlength="100" value="${esc(bot?.role || '')}" placeholder="Research assistant"></div><div class="field"><label for="bot-instructions">How should this bot work?</label><textarea id="bot-instructions" required rows="5" maxlength="6000" placeholder="Research carefully, compare sources, and keep answers concise.">${esc(bot?.instructions || '')}</textarea></div>`, async () => { const saved = await api('/api/bots', { ...(bot ? { id: bot.id } : {}), name: $('#bot-name').value, color: $('#bot-color').value, icon: $('[name=bot-icon]:checked')?.value ?? '', role: $('#bot-role').value, instructions: $('#bot-instructions').value }); await refresh(); await selectBot(saved.id); }, bot ? 'Save bot' : 'Create bot');
 }
 document.addEventListener('keydown', event => { if (event.key === 'Escape' && chatMenu) { chatMenu = ''; renderLists(); } if (event.key === 'Escape') for (const name of ['context', 'reasoning']) if ($('#' + name + '-panel') && !$('#' + name + '-panel').hidden) togglePopover(name); });
 document.addEventListener('click', event => {
@@ -481,6 +529,8 @@ document.addEventListener('click', event => {
   if (element.dataset.newChat !== undefined) action(() => newChat(element.dataset.newChat === 'incognito'));
   if (element.dataset.chatMenu) { chatMenu = chatMenu === element.dataset.chatMenu ? '' : element.dataset.chatMenu; renderLists(); }
   if (element.dataset.deleteChat) { chatMenu = ''; renderLists(); deleteChat(element.dataset.deleteChat); }
+  if (element.dataset.editBot) { chatMenu = ''; renderLists(); botDialog(state.bots.find(b => b.id === element.dataset.editBot)); }
+  if (element.dataset.deleteBot) { chatMenu = ''; renderLists(); deleteBot(element.dataset.deleteBot); }
   if ('allChats' in element.dataset) { allChats = !allChats; renderLists(); }
   if (element.dataset.chat) { chatOpen = true; chatId = element.dataset.chat; localStorage.setItem('blots.chat', chatId); showView('chat'); }
   if (element.dataset.prompt) { $('#prompt').value = element.dataset.prompt; $('#prompt').focus(); }

@@ -8,3 +8,4 @@ dist.noindex/
 .env*
 __pycache__/
 mac/blots-mac
+mac/blots-transcribe

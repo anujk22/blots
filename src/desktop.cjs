@@ -28,7 +28,8 @@ else {
       window = new BrowserWindow({ width: 1480, height: 940, minWidth: 950, minHeight: 650, title: 'Blots', backgroundColor: '#111112', titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 18, y: 13 }, webPreferences: { preload: path.join(__dirname, 'preload.cjs'), nodeIntegration: false, contextIsolation: true, sandbox: true } });
       window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
       window.webContents.on('will-navigate', (event, url) => { if (!url.startsWith(backend.origin + '/')) event.preventDefault(); });
-      window.webContents.session.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
+      // Only the microphone, for voice input; everything else stays denied.
+      window.webContents.session.setPermissionRequestHandler((_webContents, permission, callback, details) => callback(permission === 'media' && details.mediaTypes?.length > 0 && details.mediaTypes.every(type => type === 'audio')));
       window.loadURL(backend.origin); window.on('closed', () => { window = null; cursorWindow?.destroy(); });
     };
     ipcMain.handle('blots:workspace', event => { if (event.senderFrame.url.startsWith(backend.origin + '/')) return shell.openPath(backend.store.workspace); });

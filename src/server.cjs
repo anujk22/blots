@@ -11,6 +11,7 @@ const { createComputers } = require('./computer.cjs');
 const { createTools } = require('./tools.cjs');
 const { createAgent } = require('./agent.cjs');
 const { createMac, BLOCKED, BUNDLE } = require('./mac.cjs');
+const { transcribe } = require('./voice.cjs');
 
 async function createServer(options = {}) {
   const dataDir = options.dataDir || process.env.BLOTS_DATA_DIR || path.join(os.homedir(), 'Library', 'Application Support', 'Blots');
@@ -89,6 +90,11 @@ async function createServer(options = {}) {
           const apps = (await mac.request('apps')).map(a => ({ ...a, blocked: BLOCKED.has(a.app) }));
           return json(res, { ...status, apps });
         }
+        if (route === '/api/transcribe' && method === 'POST') {
+          const chunks = []; let size = 0;
+          for await (const chunk of req) { size += chunk.length; if (size > 20000000) throw new Error('Recording too long.'); chunks.push(chunk); }
+          return json(res, { text: await transcribe(Buffer.concat(chunks)) });
+        }
         if (route === '/api/models' && method === 'GET') return json(res, { models: await models(store.state.settings) });
         if (route === '/api/settings' && method === 'POST') {
           const data = await body(req), s = { ...store.state.settings };
@@ -154,7 +160,19 @@ async function createServer(options = {}) {
           const b = data.id ? bot(data.id) : { id: id() };
           b.name = text(data.name, 'Name', 40); b.role = text(data.role, 'Role', 100); b.instructions = text(data.instructions, 'Instructions', 6000);
           b.color = /^#[0-9a-f]{6}$/i.test(data.color) ? data.color : '#2155ee';
+          if (['', 'blot', 'scout', 'quill', 'ro'].includes(data.icon)) b.icon = data.icon;
           if (!data.id) store.state.bots.push(b); store.save(); computers.appearance(b.id); return json(res, b);
+        }
+        if (route === '/api/bots/delete' && method === 'POST') {
+          const data = await body(req), b = bot(data.id);
+          if (store.state.bots.length <= 1) throw new Error('Keep at least one bot.');
+          const chats = new Set(store.state.chats.filter(c => c.botId === b.id).map(c => c.id));
+          if ([...agent.active.values()].some(j => chats.has(j.chatId))) throw new Error('Stop this bot’s tasks before deleting it.');
+          for (const run of store.state.runs.filter(r => chats.has(r.chatId))) agent.forget(run);
+          const s = store.state, mine = item => item.botId === b.id;
+          s.bots = s.bots.filter(x => x !== b); s.chats = s.chats.filter(c => !chats.has(c.id)); s.runs = s.runs.filter(r => !chats.has(r.chatId));
+          s.notes = s.notes.filter(n => !mine(n)); s.recipes = s.recipes.filter(r => !mine(r)); s.routines = s.routines.filter(r => !mine(r));
+          store.save(); computers.stop(b.id).catch(() => {}); return json(res, { ok: true });
         }
         // A memory belongs to one bot, or with no botId is shared with every bot.
         if (route === '/api/notes' && method === 'POST') { const data = await body(req); if (data.botId) bot(data.botId); const note = { id: id(), ...(data.botId ? { botId: data.botId } : {}), content: text(data.content, 'Memory', 4000), createdAt: now() }; store.state.notes.unshift(note); store.save(); return json(res, note); }
