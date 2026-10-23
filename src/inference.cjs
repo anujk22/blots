@@ -24,14 +24,16 @@ async function complete(settings, messages, tools, signal, onDelta) {
   const effort = settings.reasoningEffort || '';
   if (effort && !reasoningOptions(settings.model).includes(effort)) throw new Error('This reasoning level is not supported by the selected model. Choose Model default.');
   const startedAt = performance.now();
+  // Speed counts generation from the first streamed token; elapsedMs still includes the wait before it.
+  let firstAt;
   const measured = answer => {
-    const elapsedMs = performance.now() - startedAt, outputTokens = answer.usage?.completion_tokens;
-    return { ...answer, performance: { elapsedMs, outputTokens, tokensPerSecond: Number.isFinite(outputTokens) && elapsedMs > 0 ? outputTokens * 1000 / elapsedMs : null } };
+    const end = performance.now(), elapsedMs = end - startedAt, outputTokens = answer.usage?.completion_tokens, generatingMs = end - (firstAt ?? startedAt);
+    return { ...answer, performance: { elapsedMs, outputTokens, tokensPerSecond: Number.isFinite(outputTokens) && generatingMs > 0 ? outputTokens * 1000 / generatingMs : null } };
   };
   const res = await fetch(localBase(settings.baseUrl) + '/chat/completions', {
     method: 'POST', redirect: 'error', signal,
     headers: { 'Content-Type': 'application/json', ...(settings.apiKey ? { Authorization: `Bearer ${settings.apiKey}` } : {}) },
-    body: JSON.stringify({ model: settings.model, messages, temperature: settings.temperature, max_tokens: settings.maxTokens, stream: true, stream_options: { include_usage: true }, ...(reasoningOptions(settings.model).length ? { preserve_thinking: true } : {}), ...(effort ? { reasoning_effort: effort } : {}), ...(tools.length ? { tools, tool_choice: 'auto' } : {}) }),
+    body: JSON.stringify({ model: settings.model, messages, temperature: settings.temperature, max_tokens: settings.maxTokens, stream: true, stream_options: { include_usage: true }, ...(reasoningOptions(settings.model).length ? { preserve_thinking: true } : {}), ...(effort ? { reasoning_effort: effort } : {}), ...(tools.length ? { tools, tool_choice: settings.toolChoice || 'auto' } : {}) }),
   });
   if (!res.ok) {
     const body = (await res.text()).slice(0, 600);
@@ -58,7 +60,8 @@ async function complete(settings, messages, tools, signal, onDelta) {
     if (data.choices?.[0]?.finish_reason) finishReason = data.choices[0].finish_reason;
     const delta = data.choices?.[0]?.delta;
     if (!delta) return;
-    if (delta.reasoning_content) reasoning += delta.reasoning_content;
+    firstAt ??= performance.now();
+    if (delta.reasoning_content) { reasoning += delta.reasoning_content; onDelta(delta.reasoning_content, 'reasoning'); }
     if (delta.content) { content += delta.content; onDelta(delta.content); }
     for (const part of delta.tool_calls || []) {
       const call = calls.get(part.index) || { id: '', type: 'function', function: { name: '', arguments: '' } };

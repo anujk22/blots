@@ -14,3 +14,17 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm audit --omit=dev
+  mac:
+    # Blots ships for Apple silicon: compile the Mac helper and run the suite on macOS too.
+    runs-on: macos-latest
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run mac:build
+      - run: npm test

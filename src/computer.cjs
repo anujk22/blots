@@ -44,7 +44,7 @@ function createComputers(store) {
     const home = path.join(store.dataDir, 'computers', botId);
     fs.mkdirSync(home, { recursive: true });
     const file = path.join(home, 'appearance.json');
-    fs.writeFileSync(file + '.tmp', JSON.stringify({ name: bot.name, color: bot.color, avatar: ['blot', 'scout', 'quill'].includes(bot.id) ? bot.id : null }));
+    fs.writeFileSync(file + '.tmp', JSON.stringify({ name: bot.name, color: bot.color, avatar: ['blot', 'scout', 'quill', 'ro'].includes(bot.id) ? bot.id : null }));
     fs.renameSync(file + '.tmp', file);
   }
   async function ensure(botId) {

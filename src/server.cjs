@@ -10,12 +10,28 @@ const { localBase, models, reasoningOptions, unloadModels } = require('./inferen
 const { createComputers } = require('./computer.cjs');
 const { createTools } = require('./tools.cjs');
 const { createAgent } = require('./agent.cjs');
+const { createMac, BLOCKED, BUNDLE } = require('./mac.cjs');
+const { execFile } = require('node:child_process');
+
+// Memory as Activity Monitor counts it: app memory, wired (which holds GPU and model weights on Apple silicon) and compressed.
+async function memoryUse() {
+  const total = os.totalmem();
+  if (process.platform !== 'darwin') return { total, apps: total - os.freemem(), wired: 0, compressed: 0, pressure: 'normal' };
+  const run = (file, args) => new Promise((resolve, reject) => execFile(file, args, { timeout: 3000 }, (error, stdout) => error ? reject(error) : resolve(stdout)));
+  const [vm, level] = await Promise.all([run('/usr/bin/vm_stat', []), run('/usr/sbin/sysctl', ['-n', 'kern.memorystatus_vm_pressure_level'])]);
+  const page = Number(vm.match(/page size of (\d+)/)[1]), pages = name => Number(vm.match(new RegExp(name + ':\\s+(\\d+)'))?.[1] || 0) * page;
+  return { total, apps: pages('Anonymous pages') - pages('Pages purgeable'), wired: pages('Pages wired down'), compressed: pages('Pages occupied by compressor'), pressure: { 2: 'warning', 4: 'critical' }[level.trim()] || 'normal' };
+}
 
 async function createServer(options = {}) {
   const dataDir = options.dataDir || process.env.BLOTS_DATA_DIR || path.join(os.homedir(), 'Library', 'Application Support', 'Blots');
   const store = createStore(dataDir);
   const computers = createComputers(store);
+  const mac = createMac();
   const tools = createTools(store, computers, {
+    mac,
+    // The desktop app draws the bot's cursor over the Mac control it acted on.
+    pointer: (botId, frame) => options.macPointer?.(frame, store.state.bots.find(b => b.id === botId)),
     delegate: (args, fromBotId) => {
       const target = store.state.bots.find(b => b.name.toLowerCase() === String(args.bot).toLowerCase());
       if (!target || target.id === fromBotId) throw new Error('Choose another bot by its exact name.');
@@ -36,9 +52,9 @@ async function createServer(options = {}) {
   };
   const text = (value, label, limit = 20000) => { if (typeof value !== 'string' || !value.trim() || value.length > limit) throw new Error(`${label} must be 1–${limit.toLocaleString()} characters.`); return value.trim(); };
   const bot = value => { const b = store.state.bots.find(b => b.id === value); if (!b) throw new Error('Bot not found.'); return b; };
-  function newChat(botId, title = 'New conversation') {
+  function newChat(botId, title = 'New conversation', incognito = false) {
     bot(botId);
-    const chat = { id: id(), botId, title, createdAt: now(), updatedAt: now(), messages: [] };
+    const chat = { id: id(), botId, title, createdAt: now(), updatedAt: now(), messages: [], ...(incognito ? { incognito: true } : {}) };
     store.state.chats.unshift(chat); store.save(); return chat;
   }
   function runRoutine(routine) {
@@ -78,6 +94,13 @@ async function createServer(options = {}) {
           if (req.headers['if-none-match'] === etag) { res.writeHead(304); return res.end(); }
           res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(payload);
         }
+        if (route === '/api/mac' && method === 'POST') {
+          const data = await body(req);
+          const status = await mac.request('status', { prompt: data.prompt === true });
+          const apps = (await mac.request('apps')).map(a => ({ ...a, blocked: BLOCKED.has(a.app) }));
+          return json(res, { ...status, apps });
+        }
+        if (route === '/api/system' && method === 'GET') return json(res, { memory: await memoryUse() });
         if (route === '/api/models' && method === 'GET') return json(res, { models: await models(store.state.settings) });
         if (route === '/api/settings' && method === 'POST') {
           const data = await body(req), s = { ...store.state.settings };
@@ -95,27 +118,38 @@ async function createServer(options = {}) {
           }
           if (data.apiKey !== undefined) s.apiKey = String(data.apiKey).slice(0, 1000);
           if (data.vision !== undefined) s.vision = data.vision === true;
+          if (data.adaptiveThinking !== undefined) s.adaptiveThinking = data.adaptiveThinking === true;
           if (data.visibleWork !== undefined) s.visibleWork = data.visibleWork === true;
+          if (data.macAccess !== undefined) s.macAccess = data.macAccess === true;
+          if (data.macApps !== undefined) {
+            const apps = [...new Set((Array.isArray(data.macApps) ? data.macApps : []).map(a => String(a).trim()).filter(Boolean))];
+            if (apps.length > 30 || apps.some(a => !BUNDLE.test(a) || a.length > 200)) throw new Error('List up to 30 app bundle identifiers, such as com.apple.TextEdit.');
+            const blocked = apps.find(a => BLOCKED.has(a));
+            if (blocked) throw new Error(`${blocked} can never be operated by a bot.`);
+            s.macApps = apps;
+          }
           if (data.searchUrl !== undefined) {
             const template = String(data.searchUrl).trim(), parsed = URL.canParse(template.replace('{query}', 'q')) && new URL(template.replace('{query}', 'q'));
             if (template.length > 500 || !template.includes('{query}') || !parsed || !['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) throw new Error('Use an HTTP or HTTPS search address containing {query}.');
             s.searchUrl = template;
           }
-          for (const [key, min, max] of [['temperature', 0, 2], ['maxTokens', 256, 65536], ['contextTokens', 8192, 131072], ['computerCpus', 1, 4], ['computerMemoryMiB', 1024, 4096], ['maxSteps', 1, 1000], ['maxMinutes', 1, 480], ['parallelRequests', 1, 4]]) if (data[key] !== undefined) {
+          for (const [key, min, max] of [['temperature', 0, 2], ['maxTokens', 256, 65536], ['contextTokens', 8192, 262144], ['computerCpus', 1, 4], ['computerMemoryMiB', 1024, 4096], ['maxSteps', 1, 1000], ['maxMinutes', 1, 480], ['parallelRequests', 1, 4]]) if (data[key] !== undefined) {
             const n = Number(data[key]); if (!Number.isFinite(n) || n < min || n > max || (key !== 'temperature' && !Number.isInteger(n))) throw new Error(`Invalid ${key}.`); s[key] = n;
           }
           if (s.contextTokens <= s.maxTokens+1024) throw new Error('The task context budget must leave room beyond the output budget.');
           if (s.computerMemoryMiB%512) throw new Error('Choose desktop memory in half-GiB increments.');
           store.state.settings = s; store.save(); return json(res, { ok: true });
         }
-        if (route === '/api/chats' && method === 'POST') { const data = await body(req); return json(res, newChat(data.botId)); }
+        if (route === '/api/chats' && method === 'POST') { const data = await body(req); return json(res, newChat(data.botId, 'New conversation', data.incognito === true)); }
         if (route === '/api/chats/delete' && method === 'POST') {
           const data = await body(req);
           if ([...agent.active.values()].some(j => j.chatId === data.id)) throw new Error('Stop this conversation before deleting it.');
           for (const run of store.state.runs.filter(r => r.chatId === data.id)) agent.forget(run);
           store.state.chats = store.state.chats.filter(c => c.id !== data.id); store.state.runs = store.state.runs.filter(r => r.chatId !== data.id); store.save(); return json(res, { ok: true });
         }
+        if (route === '/api/prewarm' && method === 'POST') { const data = await body(req); return json(res, agent.prewarm(data.chatId)); }
         if (route === '/api/message' && method === 'POST') { const data = await body(req); return json(res, agent.start(data.chatId, text(data.text, 'Message'), data.tools !== false)); }
+        if (route === '/api/steer' && method === 'POST') { const data = await body(req); return json(res, agent.steer(data.chatId, text(data.text, 'Message'))); }
         if (route === '/api/resume' && method === 'POST') { const data = await body(req); return json(res, agent.resume(data.runId)); }
         if (route === '/api/compact' && method === 'POST') { const data = await body(req); return json(res, agent.compact(data.chatId)); }
         if (route === '/api/stop' && method === 'POST') { const data = await body(req); return json(res, { stopped: agent.stop(data.runId) }); }
@@ -134,7 +168,10 @@ async function createServer(options = {}) {
           b.color = /^#[0-9a-f]{6}$/i.test(data.color) ? data.color : '#2155ee';
           if (!data.id) store.state.bots.push(b); store.save(); computers.appearance(b.id); return json(res, b);
         }
-        if (route === '/api/notes' && method === 'POST') { const data = await body(req); const note = { id: id(), content: text(data.content, 'Memory', 4000), createdAt: now() }; store.state.notes.unshift(note); store.save(); return json(res, note); }
+        // A memory belongs to one bot, or with no botId is shared with every bot.
+        if (route === '/api/notes' && method === 'POST') { const data = await body(req); if (data.botId) bot(data.botId); const note = { id: id(), ...(data.botId ? { botId: data.botId } : {}), content: text(data.content, 'Memory', 4000), createdAt: now() }; store.state.notes.unshift(note); store.save(); return json(res, note); }
+        if (route === '/api/notes/update' && method === 'POST') { const data = await body(req), note = store.state.notes.find(n => n.id === data.id); if (!note) throw new Error('Memory not found.'); note.content = text(data.content, 'Memory', 4000); note.updatedAt = now(); store.save(); return json(res, note); }
+        if (route === '/api/recipes/delete' && method === 'POST') { const data = await body(req); store.state.recipes = store.state.recipes.filter(r => r.id !== data.id); store.save(); return json(res, { ok: true }); }
         if (route === '/api/notes/delete' && method === 'POST') { const data = await body(req); store.state.notes = store.state.notes.filter(n => n.id !== data.id); store.save(); return json(res, { ok: true }); }
         if (route === '/api/routines' && method === 'POST') {
           return json(res, createRoutine(await body(req)));
@@ -155,7 +192,7 @@ async function createServer(options = {}) {
           return json(res, { path: relative, content: fs.readFileSync(file, 'utf8') });
         }
         if (route === '/api/files' && method === 'POST') { const data = await body(req); const file = workspacePath(store.workspace, text(data.path, 'File path', 500), true); if (typeof data.content !== 'string' || Buffer.byteLength(data.content) > 1000000) throw new Error('Choose a text file under 1 MB.'); fs.writeFileSync(file, data.content); return json(res, { ok: true }); }
-        if (route === '/api/export' && method === 'GET') { const { apiKey, ...settings } = store.state.settings; return json(res, { ...store.state, settings }); }
+        if (route === '/api/export' && method === 'GET') { const { apiKey, ...settings } = store.state.settings; return json(res, { ...store.state, chats: store.state.chats.filter(c => !c.incognito), runs: store.state.runs.filter(r => !r.incognito), settings }); }
         if (route === '/api/computer/start' && method === 'POST') {
           const data = await body(req); bot(data.botId);
           await computers.ensure(data.botId); return json(res, { ready: true });
@@ -226,7 +263,7 @@ async function createServer(options = {}) {
   }, 15000);
   return { origin, store, agent, computers, server, close: (options = {}) => {
     if (!closePromise) closePromise = (async () => {
-      closing = true; clearInterval(scheduler); await agent.shutdown(); await computers.close();
+      closing = true; clearInterval(scheduler); await agent.shutdown(); await computers.close(); mac.close();
       if (options.releaseResources) {
         const released = await Promise.allSettled([
           unloadModels(store.state.settings, [store.state.settings.model, ...store.state.runs.map(r => r.model)]),

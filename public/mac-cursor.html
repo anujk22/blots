@@ -1,0 +1,28 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; }
+  #cursor { position: absolute; left: 0; top: 0; opacity: 0; transition: transform 450ms cubic-bezier(.22, .8, .3, 1), opacity 300ms; will-change: transform; }
+  #cursor svg { display: block; filter: drop-shadow(0 0 6px var(--glow)) drop-shadow(0 1px 2px rgba(0,0,0,.45)); }
+  #badge { position: absolute; left: 22px; top: 20px; padding: 2px 8px; border-radius: 9px; font: 600 11px -apple-system, system-ui, sans-serif; color: #fff; background: var(--glow); white-space: nowrap; }
+  .ring { position: absolute; left: -14px; top: -14px; width: 28px; height: 28px; border-radius: 50%; border: 2px solid var(--glow); animation: ring 500ms ease-out forwards; }
+  @keyframes ring { from { transform: scale(.3); opacity: 1; } to { transform: scale(1.4); opacity: 0; } }
+</style>
+</head>
+<body>
+<div id="cursor"><svg width="24" height="28" viewBox="0 0 24 28"><path d="M2 2 L2 22 L7.5 17 L11 25.5 L14.5 24 L11 15.8 L18.5 15.8 Z" fill="#fff" stroke="var(--glow)" stroke-width="2" stroke-linejoin="round"/></svg><div id="badge"></div></div>
+<script>
+  const cursor = document.getElementById('cursor'), badge = document.getElementById('badge');
+  let hide;
+  // Called by Blots with window-relative coordinates: glide to the control, then show a click ring.
+  function point(x, y, color, name) {
+    cursor.style.setProperty('--glow', color); badge.textContent = name;
+    cursor.style.opacity = 1; cursor.style.transform = `translate(${x}px, ${y}px)`;
+    setTimeout(() => { const ring = document.createElement('div'); ring.className = 'ring'; cursor.appendChild(ring); setTimeout(() => ring.remove(), 600); }, 460);
+    clearTimeout(hide); hide = setTimeout(() => { cursor.style.opacity = 0; }, 4000);
+  }
+</script>
+</body>
+</html>

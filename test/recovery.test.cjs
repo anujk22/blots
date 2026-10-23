@@ -40,7 +40,7 @@ test('four identical input acknowledgements trigger inspection and another model
   try {
     const run = f.agent.start(f.chat.id, 'Read the page by scrolling.');
     await f.agent.active.get(run.id).promise;
-    assert.equal(run.status, 'done'); assert.equal(run.turns, 5);
+    assert.equal(run.status, 'done'); assert.equal(run.turns, 6);
     assert.equal(f.inputs.length, 4); assert.equal(f.observations.length, 1);
     assert.ok(recoveryRequest.messages.some(m => m.role === 'system' && m.content.includes('Repeated actions')));
     assert.equal(recoveryRequest.messages.filter(m => Array.isArray(m.content)).length, 1);

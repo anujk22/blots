@@ -6,13 +6,13 @@ const id = () => randomUUID();
 const now = () => new Date().toISOString();
 const initial = () => ({
   version: 1,
-  settings: { baseUrl: 'http://127.0.0.1:8000/v1', model: '', apiKey: '', temperature: 0.6, maxTokens: 16384, contextTokens: 65536, maxSteps: 120, maxMinutes: 120, computerCpus: 1, computerMemoryMiB: 1024, parallelRequests: 1, visibleWork: false, searchUrl: 'https://html.duckduckgo.com/html/?q={query}', vision: false, reasoningEffort: '', chatShare: 0.44 },
+  settings: { baseUrl: 'http://127.0.0.1:8000/v1', model: '', apiKey: '', temperature: 0.6, maxTokens: 16384, contextTokens: 131072, maxSteps: 120, maxMinutes: 120, computerCpus: 1, computerMemoryMiB: 1024, parallelRequests: 1, visibleWork: false, macAccess: false, macApps: [], searchUrl: 'https://html.duckduckgo.com/html/?q={query}', vision: false, reasoningEffort: '', adaptiveThinking: true, chatShare: 0.44 },
   bots: [
     { id: 'blot', name: 'Blot', role: 'Your everyday assistant', instructions: 'Help with planning, research, writing, and organizing. Be clear and practical.', color: '#2155ee' },
     { id: 'scout', name: 'Scout', role: 'Research & discovery', instructions: 'Research carefully. Use browser tools to read sources when asked. Cite URLs. Distinguish evidence from assumptions.', color: '#227f92' },
     { id: 'quill', name: 'Quill', role: 'Writing & ideas', instructions: 'Write with clarity and personality. Help draft, edit, summarize, and develop ideas. Save requested deliverables as files.', color: '#6b57bb' },
   ],
-  chats: [], notes: [], routines: [], runs: [],
+  chats: [], notes: [], recipes: [], routines: [], runs: [],
 });
 
 function createStore(dataDir) {
@@ -30,18 +30,23 @@ function createStore(dataDir) {
     if (state.settings.maxSteps === 12) state.settings.maxSteps = 120;
   }
   if (state.settings.contextTokens === undefined) {
-    state.settings.contextTokens = 65536;
+    state.settings.contextTokens = 131072;
     if (state.settings.maxTokens === 4096 && require('./inference.cjs').reasoningOptions(state.settings.model).length) state.settings.maxTokens = 16384;
   }
   state.settings.computerCpus ??= 1;
   state.settings.computerMemoryMiB ??= 1024;
   state.settings.parallelRequests ??= 1;
   state.settings.visibleWork ??= false;
+  state.settings.macAccess ??= false;
+  state.settings.adaptiveThinking ??= true;
+  state.recipes ??= [];
+  state.settings.macApps ??= [];
   state.settings.searchUrl ??= 'https://html.duckduckgo.com/html/?q={query}';
   let pending;
   const save = () => {
     clearTimeout(pending); pending = null;
-    fs.writeFileSync(file + '.tmp', JSON.stringify(state), { mode: 0o600 });
+    // Incognito conversations and their tasks live only in memory, so they are gone once Blots closes.
+    fs.writeFileSync(file + '.tmp', JSON.stringify({ ...state, chats: state.chats.filter(c => !c.incognito), runs: state.runs.filter(r => !r.incognito) }), { mode: 0o600 });
     fs.renameSync(file + '.tmp', file);
   };
   // Coalesces frequent progress updates during tasks into one write; save() flushes immediately.

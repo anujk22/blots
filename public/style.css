@@ -1,18 +1,18 @@
-/* Blots — graphite. Neutral surfaces; the selected bot's color (--bot), muted toward grey, is the only accent. */
+/* Blots — ink. Warm near-black surfaces and cream type; the selected bot's color (--bot) is the accent and tints the light. */
 @font-face { font-family: 'Bricolage'; src: url(/fonts/bricolage-grotesque-latin-opsz-normal.woff2) format('woff2-variations'); font-weight: 200 800; font-display: swap; }
 @font-face { font-family: 'Instrument Sans'; src: url(/fonts/instrument-sans-latin-wdth-normal.woff2) format('woff2-variations'); font-weight: 400 700; font-stretch: 75% 100%; font-display: swap; }
 @font-face { font-family: 'JetBrains Mono'; src: url(/fonts/jetbrains-mono-latin-wght-normal.woff2) format('woff2-variations'); font-weight: 100 800; font-display: swap; }
 
 :root {
   color-scheme: dark;
-  --ink-0: #0d0d0f; --ink-1: #141416; --ink-2: #1b1b1e; --ink-3: #242427; --ink-4: #303034;
-  --rule: #2c2c30; --rule-soft: #212124;
-  --paper: #ececee; --paper-2: #a4a4ac; --paper-3: #6f6f78;
-  --wash: #aab3c8; --sodium: #e9b25c; --rose: #e98088; --mint: #7fcfa9;
+  --ink-0: #0e0c0b; --ink-1: #151311; --ink-2: #1c1916; --ink-3: #25211e; --ink-4: #332e29;
+  --rule: #2e2925; --rule-soft: #211e1b;
+  --paper: #f4eee5; --paper-2: #b8afa3; --paper-3: #7f776d;
+  --wash: #dcc7a6; --sodium: #e9b25c; --rose: #e98088; --mint: #7fcfa9;
   --bot: #2155ee;
-  --bot-ink: color-mix(in oklab, var(--bot) 38%, #d4d6dc);
-  --bot-glow: color-mix(in oklab, var(--bot) 18%, transparent);
-  --bot-wash: color-mix(in oklab, var(--bot) 7%, var(--ink-2));
+  --bot-ink: color-mix(in oklab, var(--bot) 58%, #f4eee5);
+  --bot-glow: color-mix(in oklab, var(--bot) 22%, transparent);
+  --bot-wash: color-mix(in oklab, var(--bot) 10%, var(--ink-2));
   --display: 'Bricolage', 'Instrument Sans', system-ui, sans-serif;
   --body: 'Instrument Sans', system-ui, -apple-system, sans-serif;
   --mono: 'JetBrains Mono', ui-monospace, Menlo, monospace;
@@ -25,7 +25,7 @@ html, body { height: 100%; }
 body {
   margin: 0; overflow: hidden; color: var(--paper); font: 14px/1.55 var(--body); letter-spacing: .005em;
   -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
-  background: var(--ink-0);
+  background: radial-gradient(1200px 600px at 70% -10%, color-mix(in oklab, var(--bot) 9%, transparent), transparent 70%), radial-gradient(900px 500px at -10% 110%, color-mix(in oklab, var(--wash) 4%, transparent), transparent 70%), var(--ink-0);
 }
 ::selection { background: color-mix(in oklab, var(--bot-ink) 35%, transparent); color: white; }
 button, input, select, textarea { font: inherit; color: inherit; }
@@ -47,6 +47,25 @@ a:hover { text-decoration-color: var(--wash); }
 .title-actions { display: flex; align-items: center; gap: 6px; }
 .connection { display: inline-flex; align-items: center; gap: 8px; height: 28px; padding: 0 12px; border-radius: 99px; font: 500 11.5px var(--mono); color: var(--paper-2); background: var(--ink-1); border: 1px solid var(--rule-soft); }
 .connection::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--mint); box-shadow: 0 0 0 3px color-mix(in oklab, var(--mint) 22%, transparent); }
+.ram-control { position: relative; z-index: 40; -webkit-app-region: no-drag; }
+.ram-meter { display: inline-flex; align-items: center; gap: 8px; height: 28px; padding: 0 12px; border-radius: 99px; font: 500 11.5px var(--mono); color: var(--paper-2); background: var(--ink-1); border: 1px solid var(--rule-soft); }
+.ram-meter:hover { color: var(--paper); border-color: var(--rule); }
+.ram-meter[data-pressure="warning"] { border-color: color-mix(in oklab, var(--sodium) 45%, var(--rule)); }
+.ram-meter[data-pressure="critical"] { border-color: color-mix(in oklab, var(--rose) 55%, var(--rule)); color: var(--rose); }
+.ram-bar { display: flex; width: 38px; height: 6px; border-radius: 3px; overflow: hidden; background: var(--ink-4); }
+.ram-bar i { display: block; height: 100%; transition: width .6s var(--ease); }
+#ram-wired, .ram-rows i.wired { background: var(--wash); }
+#ram-apps, .ram-rows i.apps { background: var(--paper-3); }
+#ram-compressed, .ram-rows i.compressed { background: var(--sodium); }
+.control-popover.ram-panel { top: calc(100% + 8px); bottom: auto; left: auto; right: 0; }
+.ram-panel output[data-pressure="warning"] { color: var(--sodium); }
+.ram-panel output[data-pressure="critical"] { color: var(--rose); }
+.ram-panel output[data-pressure="normal"] { color: var(--mint); }
+.ram-rows { margin: 0; display: grid; gap: 6px; }
+.ram-rows div { display: flex; justify-content: space-between; font-size: 12.5px; }
+.ram-rows dt { display: flex; align-items: center; gap: 8px; color: var(--paper-2); }
+.ram-rows dd { margin: 0; font: 500 12px var(--mono); }
+.ram-rows i { width: 8px; height: 8px; border-radius: 2px; background: var(--ink-4); }
 .connection.offline::before { background: var(--sodium); box-shadow: 0 0 0 3px color-mix(in oklab, var(--sodium) 22%, transparent); }
 
 /* ── Shell ─────────────────────────────────────────────── */
@@ -76,17 +95,24 @@ a:hover { text-decoration-color: var(--wash); }
 .bot-text small { color: var(--paper-3); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* A working bot gets a turning ink ring; one that needs you glows amber. */
 .bot-item:not([data-state="idle"]) .bot-avatar::after { content: ''; position: absolute; inset: -4px; border-radius: 50%; padding: 2px; -webkit-mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0); mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0); }
-.bot-item[data-state="running"] .bot-avatar::after, .bot-item[data-state="queued"] .bot-avatar::after { background: conic-gradient(from 0deg, transparent 10%, color-mix(in oklab, var(--bot-color) 35%, #d4d6dc)); animation: spin 1.4s linear infinite; }
+.bot-item[data-state="running"] .bot-avatar::after, .bot-item[data-state="queued"] .bot-avatar::after { background: conic-gradient(from 0deg, transparent 10%, color-mix(in oklab, var(--bot-color) 58%, #f4eee5)); animation: spin 1.4s linear infinite; }
 .bot-item[data-state="queued"] .bot-avatar::after { animation-duration: 3s; opacity: .6; }
 .bot-item[data-state="waiting"] .bot-avatar::after { background: var(--sodium); animation: breathe 1.6s ease-in-out infinite; }
-.bot-item[data-state="running"] small { color: color-mix(in oklab, var(--bot-color) 35%, #d4d6dc); }
+.bot-item[data-state="running"] small { color: color-mix(in oklab, var(--bot-color) 58%, #f4eee5); }
 .bot-item[data-state="waiting"] small { color: var(--sodium); font-weight: 600; }
-#chat-list { display: grid; gap: 1px; min-height: 0; }
+/* Each agent's conversations hang under it; only the selected agent's list is open. */
+.agent-chats { display: grid; gap: 1px; margin: 2px 0 8px 26px; padding-left: 10px; border-left: 1px solid var(--rule-soft); }
+.agent-chat-actions { display: flex; align-items: center; gap: 2px; }
+.agent-chat-actions .new-chat { flex: 1; color: var(--paper-3); }
+.agent-chat-actions .icon-button { width: 30px; height: 30px; color: var(--paper-3); }
+.agent-chat-actions .icon-button .icon, .chat-list-item .icon { width: 15px; height: 15px; }
+.chat-list-item.incognito { color: var(--paper-3); font-style: italic; }
+.chat-list-item.more { color: var(--paper-3); font: 500 11px var(--mono); }
 .chat-list-item { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px; border: 0; border-radius: 9px; background: none; color: var(--paper-2); font-size: 13px; text-align: left; min-width: 0; }
 .chat-list-item span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .chat-list-item:hover { background: var(--ink-1); color: var(--paper); }
 .chat-list-item.selected { background: var(--ink-2); color: var(--paper); }
-.chat-list-item:not([data-state="idle"])::before { content: ''; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--bot-ink); animation: breathe 1.4s ease-in-out infinite; }
+.chat-list-item[data-state]:not([data-state="idle"])::before { content: ''; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--bot-ink); animation: breathe 1.4s ease-in-out infinite; }
 .chat-list-item[data-state="waiting"]::before { background: var(--sodium); }
 .sidebar-footer { margin-top: auto; display: flex; align-items: center; gap: 8px; padding: 14px 10px; font: 500 11px var(--mono); color: var(--paper-3); }
 .local-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--mint); box-shadow: 0 0 10px var(--mint); }
@@ -96,6 +122,39 @@ a:hover { text-decoration-color: var(--wash); }
 .avatar img { width: 100%; height: 100%; object-fit: contain; }
 .avatar:has(img) { background: none; border-radius: 0; overflow: visible; }
 .agent-initial { font: 700 13px var(--display); color: white; }
+.mascot { background: none; border-radius: 0; overflow: visible; position: relative; }
+.mascot::before { content: ""; position: absolute; left: 20%; right: 20%; bottom: 9%; height: 8%; border-radius: 50%; background: radial-gradient(closest-side, rgb(0 0 0 / .45), transparent); }
+.mascot :is(.m-float, .m-body) { position: absolute; inset: 0; display: block; }
+.mascot img { position: absolute; inset: 0; width: 100%; height: 100%; display: block; user-select: none; -webkit-user-drag: none; }
+.mascot .m-blink { opacity: 0; }
+.mascot .m-over { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.mascot.alive :is(.m-float, .m-body, .m-blink, .m-think circle, .m-badge, .m-z) { animation-delay: var(--phase, 0s); }
+.mascot.alive .m-body { transform-origin: 50% 92%; animation: m-breathe 4.2s ease-in-out infinite; }
+.mascot.alive .m-blink { animation: m-blink 5.2s steps(1) infinite; }
+.mascot .m-think circle { fill: var(--paper-2); opacity: .3; }
+.mascot.alive .m-think circle { animation: think 1.4s ease-in-out infinite; }
+.mascot.alive .m-think circle:nth-child(2) { animation-delay: calc(var(--phase, 0s) + .2s); }
+.mascot.alive .m-think circle:nth-child(3) { animation-delay: calc(var(--phase, 0s) + .4s); }
+.mascot.alive[data-mood="working"] .m-float { animation: bob .9s ease-in-out infinite; }
+.mascot.alive[data-mood="waiting"] .m-float { transform-origin: 50% 92%; animation: wiggle 2.2s ease-in-out infinite; }
+.mascot .m-badge { transform-box: view-box; transform-origin: 86px 16px; }
+.mascot.alive .m-badge { animation: m-pop 1.1s ease-in-out infinite; }
+.mascot .m-z { font: 700 16px var(--display); fill: var(--paper-2); }
+.mascot.alive .m-z { animation: snooze 2.6s ease-in-out infinite; }
+.mascot.alive[data-mood="annoyed"] .m-float { transform-origin: 50% 92%; animation: squish .5s var(--ease); }
+.mascot.alive[data-mood="dizzy"] .m-float { animation: wiggle .8s ease-in-out infinite; }
+@keyframes m-blink { 0%, 95.5% { opacity: 0; } 96%, 98.5% { opacity: 1; } 99% { opacity: 0; } }
+@keyframes m-breathe { 50% { transform: scale(1.03, .97); } }
+@keyframes blink { 0%, 92%, 100% { transform: scaleY(1); } 95% { transform: scaleY(.08); } }
+@keyframes halo { 50% { transform: translateY(-2px); } }
+@keyframes glint { 50% { opacity: .55; } }
+@keyframes think { 0%, 100% { opacity: .2; transform: translateY(0); } 40% { opacity: .9; transform: translateY(-1.5px); } }
+@keyframes bob { 50% { transform: translateY(-3px); } }
+@keyframes wiggle { 0%, 55%, 100% { transform: rotate(0); } 62% { transform: rotate(-6deg); } 70% { transform: rotate(5deg); } 78% { transform: rotate(-4deg); } 86% { transform: rotate(2deg); } }
+@keyframes m-pop { 50% { transform: scale(1.14); } }
+@keyframes snooze { 0% { opacity: 0; transform: translate(0, 4px); } 30%, 70% { opacity: .9; } 100% { opacity: 0; transform: translate(6px, -8px); } }
+@keyframes squish { 30% { transform: scale(1.12, .84); } 60% { transform: scale(.94, 1.06); } }
+@keyframes dizzy { 25% { transform: rotate(-8deg); } 75% { transform: rotate(8deg); } }
 
 /* ── Buttons & inputs ──────────────────────────────────── */
 .button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; height: 38px; padding: 0 17px; border: 0; border-radius: 99px; background: var(--paper); color: var(--ink-0); font-weight: 600; white-space: nowrap; transition: transform .15s var(--ease), background .15s, box-shadow .2s; }
@@ -181,6 +240,56 @@ input[type=color] { width: 100%; height: 40px; padding: 4px; border: 1px solid v
 .live-activity small { display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--paper-2); font-size: 12px; white-space: nowrap; overflow: hidden; }
 .live-activity small .icon { width: 13px; height: 13px; color: var(--bot-ink); }
 .live-activity small code { font: 11.5px var(--mono); color: var(--paper-3); overflow: hidden; text-overflow: ellipsis; }
+.memory-heading { margin: 28px 0 12px; font: 600 15px var(--display); }
+.memory-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 18px; }
+.memory-tabs button { display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 12px 0 8px; border: 1px solid var(--rule-soft); border-radius: 99px; background: var(--ink-1); color: var(--paper-2); font-weight: 500; }
+.memory-tabs button:hover { color: var(--paper); border-color: var(--rule); }
+.memory-tabs button[aria-selected="true"] { background: var(--ink-3); color: var(--paper); border-color: var(--rule); }
+.memory-tabs button > .icon { width: 22px; height: 16px; color: var(--paper-3); }
+.memory-tabs small { font: 500 11px var(--mono); color: var(--paper-3); }
+.memory-ask { display: flex; align-items: center; gap: 10px; padding: 8px 8px 8px 10px; border-radius: 18px; background: var(--ink-2); border: 1px solid var(--rule); }
+.memory-ask:focus-within { border-color: color-mix(in oklab, var(--bot-ink) 45%, var(--rule)); }
+.memory-ask input { flex: 1; min-width: 0; border: 0; background: none; outline: none; font-size: 14.5px; }
+.memory-suggestions { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 4px; }
+.memory-suggestions button { height: 28px; padding: 0 11px; border: 1px solid var(--rule-soft); border-radius: 99px; background: none; color: var(--paper-3); font-size: 12.5px; }
+.memory-suggestions button:hover { color: var(--paper); border-color: var(--rule); }
+.memory-list { border-radius: var(--radius); background: var(--ink-2); border: 1px solid var(--rule-soft); overflow: hidden; }
+.memory-row { display: flex; align-items: center; gap: 10px; padding: 10px 10px 10px 18px; border-top: 1px solid var(--rule-soft); }
+.memory-row:first-child { border-top: 0; }
+.memory-row p { flex: 1; min-width: 0; margin: 0; font-size: 14.5px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+.memory-row time { font: 11px var(--mono); color: var(--paper-3); white-space: nowrap; }
+.memory-row .icon-button { opacity: 0; transition: opacity .15s; }
+.memory-row:hover .icon-button, .memory-row .icon-button:focus-visible { opacity: 1; }
+.memory-empty { padding: 18px; border-radius: var(--radius); border: 1px dashed var(--rule); color: var(--paper-2); }
+.memory-heading-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.memory-heading-row .memory-heading { margin-bottom: 4px; }
+.memory-caption { margin: 0 0 12px; font-size: 13px; }
+.notebook { padding: 4px 22px; border-radius: var(--radius); background: var(--ink-2); border: 1px solid var(--rule-soft); max-height: 520px; overflow: auto; }
+.notebook > .muted { display: block; padding: 14px 0; }
+.notebook h1, .notebook h2, .notebook h3 { font: 650 15px var(--display); margin: 18px 0 6px; }
+/* Incognito: a quieter, dashed treatment so it is always clear nothing here is kept. */
+.incognito-badge { display: inline-flex; align-items: center; gap: 4px; color: var(--paper-2); font-weight: 600; }
+.incognito-badge .icon { width: 13px; height: 13px; }
+.chat-layout.incognito .composer { border-style: dashed; }
+.chat-layout.incognito .chat-pane { background-image: repeating-linear-gradient(135deg, transparent 0 14px, color-mix(in oklab, white 1.6%, transparent) 14px 15px); }
+.incognito-welcome .eyebrow { display: inline-flex; align-items: center; gap: 6px; }
+.incognito-welcome .eyebrow .icon { width: 14px; height: 14px; }
+.steer-label { margin-bottom: 4px; font: 500 11px var(--mono); color: var(--paper-3); }
+.thought { margin: 0 0 10px 30px; }
+.thought summary { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; list-style: none; font: 500 12px var(--body); color: var(--paper-3); user-select: none; }
+.thought summary::-webkit-details-marker { display: none; }
+.thought summary::before { content: '›'; display: inline-block; font-size: 14px; transition: transform .2s var(--ease); }
+.thought[open] summary::before { transform: rotate(90deg); }
+.thought summary:hover { color: var(--paper-2); }
+.thought-body { margin-top: 6px; padding: 2px 0 2px 12px; border-left: 1px solid var(--rule); max-height: 220px; overflow-y: auto; white-space: pre-wrap; font-size: 12.5px; line-height: 1.55; color: var(--paper-3); }
+.thought.live { margin-top: -8px; }
+.thought.live .thought-body { color: var(--paper-2); }
+.thought.live .thought-body.overflowing { -webkit-mask-image: linear-gradient(to bottom, transparent, black 36px); mask-image: linear-gradient(to bottom, transparent, black 36px); }
+/* Glossy sheen sweeping across text while the bot is thinking. */
+/* The gradient starts and ends on the same colour and moves exactly one tile per cycle, so the loop has no seam. */
+.gloss { background: linear-gradient(100deg, var(--paper-3) 30%, var(--paper) 45%, var(--bot-ink) 50%, var(--paper-3) 65%) 0 0 / 200% 100% repeat-x; -webkit-background-clip: text; background-clip: text; color: transparent; animation: sheen 2.2s linear infinite; }
+@keyframes sheen { to { background-position: -200% 0; } }
+.stream-caret { display: inline-block; width: 7px; height: 7px; margin-left: 4px; border-radius: 50%; vertical-align: middle; background: radial-gradient(circle at 35% 35%, white, var(--bot-ink) 60%); box-shadow: 0 0 10px var(--bot-ink); animation: breathe 1s ease-in-out infinite; }
 .live-count { font: 11px var(--mono); color: var(--paper-3); white-space: nowrap; }
 .spinner { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--rule); border-top-color: var(--bot-ink); animation: spin .8s linear infinite; }
 
@@ -205,7 +314,7 @@ input[type=color] { width: 100%; height: 40px; padding: 4px; border: 1px solid v
 @keyframes float { 50% { transform: translateY(-6px); } }
 .eyebrow { margin: 0 0 8px; font: 500 11px var(--mono); letter-spacing: .16em; text-transform: uppercase; color: var(--bot-ink); }
 .welcome h2 { margin: 0; font: 700 clamp(30px, 4.2vw, 46px)/1 var(--display); letter-spacing: -.045em; font-variation-settings: 'opsz' 96; }
-.welcome h2 em { font-style: normal; color: var(--paper-3); }
+.welcome h2 em { font-style: normal; background: linear-gradient(100deg, var(--bot-ink), var(--wash)); -webkit-background-clip: text; background-clip: text; color: transparent; }
 .welcome-sub { max-width: 420px; margin: 14px 0 22px; color: var(--paper-2); }
 .starters { display: grid; gap: 8px; width: 100%; max-width: 420px; }
 .starters button { display: flex; align-items: flex-start; gap: 10px; padding: 14px; border: 1px solid var(--rule-soft); border-radius: 16px; background: var(--ink-2); text-align: left; transition: transform .2s var(--ease), border-color .2s, background .2s; }
@@ -234,6 +343,8 @@ input[type=color] { width: 100%; height: 40px; padding: 4px; border: 1px solid v
 .reasoning-control, .context-control { position: relative; }
 .control-popover { position: absolute; bottom: calc(100% + 10px); left: 0; z-index: 30; width: 280px; padding: 14px; border-radius: 16px; background: color-mix(in oklab, var(--ink-2) 92%, transparent); backdrop-filter: blur(16px); border: 1px solid var(--rule); box-shadow: 0 24px 60px -20px #000; animation: pop .18s var(--ease) both; }
 .context-control .control-popover { left: auto; right: 0; }
+.context-sizes { margin: 0 0 12px; }
+.context-sizes button { flex: 1; }
 .popover-heading { display: flex; justify-content: space-between; margin-bottom: 10px; }
 .popover-heading output { font: 500 12px var(--mono); color: var(--bot-ink); }
 .reasoning-ticks { position: relative; height: 18px; margin: 4px 8px 12px; font: 10px var(--mono); color: var(--paper-3); }
@@ -287,7 +398,7 @@ input[type=color] { width: 100%; height: 40px; padding: 4px; border: 1px solid v
 /* Out of grid flow: a grid item never shrinks below its canvas, which stops noVNC from scaling the desktop down. */
 #vnc-screen { position: absolute; inset: 0; }
 .screen-host canvas { outline: none; }
-.desktop-off { display: grid; justify-items: center; align-content: center; gap: 4px; padding: 20px; text-align: center; background: radial-gradient(circle at 50% 40%, color-mix(in oklab, var(--desktop-color) 8%, #151517), #0b0b0d 75%); position: relative; }
+.desktop-off { display: grid; justify-items: center; align-content: center; gap: 4px; padding: 20px; text-align: center; background: radial-gradient(circle at 50% 40%, color-mix(in oklab, var(--desktop-color) 8%, #171412), #0c0a09 75%); position: relative; }
 .desktop-off::before { content: ''; position: absolute; inset: 0; background-image: radial-gradient(color-mix(in oklab, white 9%, transparent) 1px, transparent 1px); background-size: 18px 18px; -webkit-mask: radial-gradient(circle at 50% 45%, #000, transparent 75%); mask: radial-gradient(circle at 50% 45%, #000, transparent 75%); }
 .desktop-off > * { position: relative; }
 .desktop-off .avatar { --size: 64px; margin-bottom: 8px; box-shadow: 0 12px 40px -10px var(--bot-glow); }
@@ -423,7 +534,7 @@ dialog::backdrop { background: color-mix(in oklab, var(--ink-0) 60%, transparent
   :root { --sidebar-width: 68px; }
   .sidebar { padding: 4px 8px 0 10px; align-items: center; }
   #navigation button, .bot-item { justify-content: center; padding: 0; width: 44px; }
-  #navigation button span, .bot-text, .section-label, #chat-list, .sidebar-footer div:last-child { display: none; }
+  #navigation button span, .bot-text, .section-label, .agent-chats, .sidebar-footer div:last-child { display: none; }
   .bot-item { height: 48px; }
   .chat-layout { grid-template-columns: minmax(0, 1fr); }
   .pane-divider { display: none; }
@@ -444,3 +555,19 @@ dialog::backdrop { background: color-mix(in oklab, var(--ink-0) 60%, transparent
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
 }
+
+.adaptive-toggle { display: flex; align-items: center; margin-top: 14px; font-size: 12.5px; color: var(--paper); }
+.run-plan { list-style: none; margin: -4px 0 14px 42px; padding: 10px 14px; display: grid; gap: 6px; border: 1px solid var(--rule); border-radius: 14px; background: var(--ink-2); font-size: 12.5px; color: var(--paper); }
+.run-plan li { display: flex; align-items: baseline; gap: 9px; }
+.run-plan li span { flex: none; width: 11px; height: 11px; border-radius: 4px; border: 1.5px solid var(--paper-3); transform: translateY(1px); }
+.run-plan li.done { color: var(--paper-3); text-decoration: line-through; text-decoration-color: color-mix(in oklab, var(--paper-3) 60%, transparent); }
+.run-plan li.done span { border-color: var(--bot-ink, var(--paper-2)); background: var(--bot-ink, var(--paper-2)); }
+
+.recipe-row details { flex: 1; min-width: 0; }
+.recipe-row summary { cursor: pointer; color: var(--paper); font-size: 13.5px; line-height: 1.45; }
+.recipe-row ol { margin: 8px 0 2px; padding-left: 20px; display: grid; gap: 3px; color: var(--paper-3); font-size: 12px; }
+.recipe-row code { font: 11.5px var(--mono); color: var(--paper-2); word-break: break-all; }
+
+/* Panels catch a little light along their top edge. */
+.chat-pane, .computer-pane, .card { box-shadow: inset 0 1px 0 color-mix(in oklab, var(--paper) 6%, transparent); }
+.chat-pane, .computer-pane { background: linear-gradient(180deg, color-mix(in oklab, var(--ink-2) 70%, var(--ink-1)), var(--ink-1) 240px); }

@@ -10,7 +10,8 @@
     "start": "electron .",
     "dev": "node src/server.cjs",
     "test": "node --test test/*.test.cjs",
-    "build": "npm run vendor && electron-builder --mac dir --arm64",
+    "build": "npm run vendor && npm run mac:build && electron-builder --mac dir --arm64",
+    "mac:build": "swiftc -O mac/helper.swift -o mac/blots-mac",
     "vendor": "esbuild public/vendor-entry.js --bundle --format=esm --minify --outfile=public/vendor.js",
     "computer:build": "docker build -t blots-computer:1.0 computer",
     "computer:build:full": "docker build --build-arg FULL_APPS=1 -t blots-computer:1.0 computer"
@@ -42,7 +43,11 @@
       "public/**",
       "assets/**",
       "package.json",
-      "computer/**"
+      "computer/**",
+      "mac/blots-mac"
+    ],
+    "asarUnpack": [
+      "mac/blots-mac"
     ],
     "asar": true,
     "npmRebuild": false,

@@ -50,7 +50,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(dict(**appearance(), apps=[dict(id=key, name=value['name']) for key, value in APPS.items() if key != 'terminal']))
         if u.path == '/avatar.png':
             avatar = appearance()['avatar']
-            if avatar in ('blot', 'scout', 'quill'):
+            if avatar in ('blot', 'scout', 'quill', 'ro'):
                 return self.reply(Path(f'/opt/blots/avatars/{avatar}.png').read_bytes(), kind='image/png')
             return self.reply({'error': 'No portrait'}, 404)
         if u.path.startswith('/icons/'):

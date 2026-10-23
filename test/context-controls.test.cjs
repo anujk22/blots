@@ -22,15 +22,15 @@ async function modelServer(answer) {
 }
 const settings = baseUrl => ({ baseUrl, model: 'incoai/Qwen3.8-27B-Splash', maxTokens: 4096, maxSteps: 5, contextTokens: 65536 });
 function addChat(app, content = '') { const chat = { id: crypto.randomUUID(), botId: 'blot', title: 'Context test', messages: content ? [{ id: crypto.randomUUID(), role: 'user', content }] : [] }; app.store.state.chats.push(chat); return chat; }
-const summaryRequest = request => request.messages[0].content.startsWith('Save a factual task checkpoint');
+const summaryRequest = request => String(request.messages.at(-1).content).startsWith('Save a factual task checkpoint');
 
-test('TPS uses reported output counts and includes prompt processing, never a character estimate', async () => {
+test('TPS uses reported output counts measured from the first token, never a character estimate', async () => {
   const model = await modelServer(async () => { await delay(100); return { reasoning_content: 'Thinking', content: 'Answer' }; });
   try {
     const answer = await complete(settings(model.baseUrl), [{ role: 'user', content: 'Hello' }], [], new AbortController().signal, () => {});
     assert.equal(answer.performance.outputTokens, 20); assert.ok(answer.performance.elapsedMs >= 90);
-    assert.ok(answer.performance.tokensPerSecond > 0 && answer.performance.tokensPerSecond <= 225);
-    assert.equal(answer.performance.tokensPerSecond, 20000 / answer.performance.elapsedMs);
+    // The 100 ms wait before the first token counts toward elapsedMs, not toward speed.
+    assert.ok(answer.performance.tokensPerSecond > 20000 / answer.performance.elapsedMs);
   } finally { await model.close(); }
 });
 

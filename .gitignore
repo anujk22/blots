@@ -7,3 +7,4 @@ dist.noindex/
 *.log
 .env*
 __pycache__/
+mac/blots-mac
