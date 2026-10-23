@@ -12,6 +12,7 @@ const { createTools } = require('./tools.cjs');
 const { createAgent } = require('./agent.cjs');
 const { createMac, BLOCKED, BUNDLE } = require('./mac.cjs');
 const { streamVoice } = require('./voice.cjs');
+const { systemUse } = require('./system.cjs');
 
 async function createServer(options = {}) {
   const dataDir = options.dataDir || process.env.BLOTS_DATA_DIR || path.join(os.homedir(), 'Library', 'Application Support', 'Blots');
@@ -90,6 +91,7 @@ async function createServer(options = {}) {
           const apps = (await mac.request('apps')).map(a => ({ ...a, blocked: BLOCKED.has(a.app) }));
           return json(res, { ...status, apps });
         }
+        if (route === '/api/system' && method === 'GET') return json(res, await systemUse());
         if (route === '/api/models' && method === 'GET') return json(res, { models: await models(store.state.settings) });
         if (route === '/api/settings' && method === 'POST') {
           const data = await body(req), s = { ...store.state.settings };

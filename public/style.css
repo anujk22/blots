@@ -62,6 +62,14 @@ a:hover { text-decoration-color: var(--wash); }
 .section-label button .icon { width: 15px; height: 15px; }
 .section-label button:hover { background: var(--ink-2); color: var(--paper); }
 #bots { display: grid; gap: 2px; margin-bottom: 18px; }
+.system-meters { position: sticky; bottom: 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: auto; padding: 10px 6px 14px; background: var(--ink-0); box-shadow: 0 -14px 14px -4px var(--ink-0); }
+.system-meters:empty { display: none; }
+.meter { --level: var(--paper-3); display: grid; grid-template-columns: 1fr auto; row-gap: 5px; min-width: 0; font: 10px var(--mono); color: var(--paper-3); }
+.meter[data-level="high"] { --level: var(--sodium); }
+.meter[data-level="full"] { --level: var(--rose); }
+.meter-value { color: var(--paper-2); font-variant-numeric: tabular-nums; }
+.meter-bar { grid-column: 1 / -1; height: 3px; border-radius: 99px; background: var(--ink-3); overflow: hidden; }
+.meter-bar i { display: block; height: 100%; border-radius: inherit; background: var(--level); transition: width .6s var(--ease), background .3s; }
 .bot-item { display: flex; width: 100%; align-items: center; gap: 11px; padding: 7px 8px; border: 0; border-radius: 14px; background: none; text-align: left; position: relative; transition: background .2s; }
 .bot-item:hover { background: var(--ink-1); }
 .bot-item.selected { background: linear-gradient(100deg, var(--ink-3), var(--ink-3)); box-shadow: inset 0 0 0 1px var(--rule); }
@@ -572,7 +580,8 @@ dialog::backdrop { background: color-mix(in oklab, var(--ink-0) 60%, transparent
   :root { --sidebar-width: 68px; }
   .sidebar { padding: 4px 8px 0 10px; align-items: center; }
   #navigation button, .bot-item { justify-content: center; padding: 0; width: 44px; }
-  #navigation button span, .bot-text, .section-label, .agent-chats { display: none; }
+  #navigation button span, .bot-text, .section-label, .agent-chats, .meter-label { display: none; }
+  .system-meters { grid-template-columns: 1fr; gap: 8px; width: 100%; }
   .bot-item { height: 48px; }
   .chat-layout { grid-template-columns: minmax(0, 1fr); }
   .pane-divider { display: none; }

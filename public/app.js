@@ -224,6 +224,7 @@ function renderChat() {
   $('#close-chat').onclick = () => setChatOpen(false);
   $('#composer').onsubmit = event => { event.preventDefault(); action(sendMessage); };
   $('#voice').onclick = () => action(toggleVoice);
+  $('#messages').onscroll = trackChatScroll;
   $('#prompt').oninput = () => { updateSendButton(); if (chatId && warmedChat !== chatId && $('#prompt').value.trim()) { warmedChat = chatId; api('/api/prewarm', { chatId }).catch(() => {}); } const input = $('#prompt'); input.style.height = 'auto'; input.style.height = Math.min(input.scrollHeight, 110) + 'px'; if (full) $('#computer-pane').style.bottom = $('.composer-wrap').getBoundingClientRect().height + 'px'; };
   $('#prompt').onkeydown = event => { if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); action(sendMessage); } };
   $('#new-chat').onclick = () => action(() => newChat()); $('#new-incognito').onclick = () => action(() => newChat(true)); $('#edit-bot').onclick = () => botDialog(bot);
@@ -363,12 +364,20 @@ async function saveComposerSettings(data) {
   try { await api('/api/settings', data); await refresh(); }
   finally { composerSaving = false; updateComposerControls(); }
 }
+// The chat follows new output until the reader scrolls up, and follows again once they return to the bottom.
+let followChat = true, lastChatScroll = 0;
+function trackChatScroll() {
+  const box = $('#messages');
+  if (box.scrollTop < lastChatScroll - 1) followChat = false;
+  if (box.scrollHeight - box.scrollTop - box.clientHeight < 8) followChat = true;
+  lastChatScroll = box.scrollTop;
+}
 function setChatOpen(open) {
   chatOpen = open;
   $('.chat-layout')?.classList.toggle('chat-open', open);
   if ($('#chat-pane')) $('#chat-pane').hidden = !open;
   $('#toggle-chat')?.setAttribute('aria-expanded', String(open));
-  if (open && $('#messages')) $('#messages').scrollTop = $('#messages').scrollHeight;
+  if (open && $('#messages')) { followChat = true; $('#messages').scrollTop = $('#messages').scrollHeight; }
 }
 async function sendMessage() {
   if (pendingSend || composerSaving) return;
@@ -402,8 +411,8 @@ function renderMessages() {
   const signature = JSON.stringify([chat?.messages, run?.id, run?.status, !!run?.draft, !!run?.thinking, run?.activity, run?.approval, run?.error, run?.compacting, run?.plan]);
   if (chat?.messageCount && !chat.messages.length) return;
   if (signature === messagesSignature) return; messagesSignature = signature;
-  // Follow new output only while the reader is at the bottom; opening a different chat starts at its end.
-  const element = $('#messages'), nearBottom = element.scrollHeight - element.scrollTop - element.clientHeight < 140 || element.dataset.chat !== (chat?.id || '');
+  const element = $('#messages');
+  if (element.dataset.chat !== (chat?.id || '')) followChat = true;
   element.dataset.chat = chat?.id || '';
   if (!chat?.messages.length && chat?.incognito) {
     element.innerHTML = `<div class="welcome incognito-welcome"><div class="welcome-mascot">${avatar(bot, 112)}</div><p class="eyebrow">${icon('ghost')} Incognito · ${esc(bot.name)}</p><h2>Just between<br><em>us.</em></h2><p class="welcome-sub">${esc(bot.name)} won’t use or add to its memory here, and this conversation isn’t kept: it disappears when Blots closes. Files saved to the workspace and pages opened on ${esc(bot.name)}’s computer still stay.</p></div>`;
@@ -416,7 +425,7 @@ function renderMessages() {
     if (run?.approval) { element.innerHTML += approvalHTML(run.approval); setChatOpen(true); }
     if (run?.error) element.innerHTML += `<div class="message-error${run.status === 'paused' ? ' paused' : ''}">${esc(run.error)}${['paused', 'failed', 'stopped'].includes(run.status) && (run.resumable || run.steps.length) ? `<br><button class="button small secondary" data-continue="${run.id}">${icon('play')} Continue task</button>` : run.status === 'failed' ? `<br><button class="button small secondary" data-retry>${icon('retry')} Try again</button>` : ''}</div>`;
   }
-  if (nearBottom) element.scrollTop = element.scrollHeight;
+  if (followChat) element.scrollTop = element.scrollHeight;
 }
 function approvalHTML(approval) {
   return `<div class="approval"><div class="approval-head"><span class="approval-icon">${icon(toolIcon(approval.tool))}</span><div><small>Needs your OK</small><strong>${humanTool(approval.tool)}?</strong></div></div><p>Review the action before ${esc(currentBot().name)} carries it out.</p><pre>${esc(approval.tool === 'write_file' ? `${approval.args.path}\n\n${approval.args.content}` : JSON.stringify(approval.args, null, 2))}</pre><div class="approval-actions"><button class="button small" data-approve="${approval.id}">${icon('check')} Allow once</button><button class="button small secondary" data-deny="${approval.id}">Decline</button></div></div>`;
@@ -600,19 +609,28 @@ function streamFrame() {
   requestAnimationFrame(streamFrame);
   const run = view === 'chat' && currentRun(); if (!run) return;
   if (stream.run !== run.id) Object.assign(stream, { run: run.id, thinking: 0, draft: 0 });
-  const box = $('#messages'), near = box.scrollHeight - box.scrollTop - box.clientHeight < 140;
+  const box = $('#messages'); let changed = false;
   for (const [key, render] of [['thinking', esc], ['draft', text => markdown(text).trimEnd().replace(/(<\/(?:p|li|h[1-6])>(?:\s*<\/[uo]l>)*)?$/, '<span class="stream-caret"></span>$1')]]) {
     const target = run[key] || '', element = document.getElementById('live-' + key);
     if (stream[key] > target.length) stream[key] = 0;
     stream[key] = Math.min(target.length, stream[key] + Math.max(1, Math.ceil((target.length - stream[key]) / 30)));
     if (!element || element.dataset.shown === String(stream[key])) continue;
-    element.dataset.shown = stream[key]; element.innerHTML = render(target.slice(0, stream[key]));
+    element.dataset.shown = stream[key]; element.innerHTML = render(target.slice(0, stream[key])); changed = true;
     // Keep the newest reasoning in view; the top fades only once earlier text has scrolled away.
     if (key === 'thinking') { element.scrollTop = element.scrollHeight; element.classList.toggle('overflowing', element.scrollHeight > element.clientHeight); }
   }
-  if (near) box.scrollTop = box.scrollHeight;
+  if (changed && followChat) box.scrollTop = box.scrollHeight;
 }
 requestAnimationFrame(streamFrame);
 async function poll() { await refresh(); setTimeout(poll, document.hidden ? 5000 : state?.runs.some(isLive) ? 700 : 2000); }
 document.addEventListener('visibilitychange', () => { if (view === 'chat') updateComputer(); if (!document.hidden) { refresh(); refreshModels(); } });
 setTimeout(poll, 1000); setInterval(() => { if (!document.hidden) refreshModels(); }, 30000);
+// This Mac's load in the sidebar footer, refreshed while the window is visible.
+async function updateSystem() {
+  if (document.hidden) return;
+  const use = await api('/api/system').catch(() => null); if (!use) return;
+  const gb = bytes => (bytes / 2 ** 30).toFixed(bytes < 10 * 2 ** 30 ? 1 : 0);
+  const meters = [['CPU', use.cpu, `CPU ${use.cpu}% across all cores`], ['GPU', use.gpu, use.gpu === null ? 'GPU usage unavailable' : `GPU ${use.gpu}%`], ['RAM', use.ram.used === null ? null : Math.round(use.ram.used / use.ram.total * 100), use.ram.used === null ? 'Memory usage unavailable' : `Memory ${gb(use.ram.used)} of ${gb(use.ram.total)} GB used`]];
+  $('#system-meters').innerHTML = meters.map(([label, percent, title]) => `<div class="meter" title="${esc(title)}" data-level="${percent >= 90 ? 'full' : percent >= 75 ? 'high' : ''}"><span class="meter-label">${label}</span><span class="meter-value">${percent === null ? '–' : percent + '%'}</span><span class="meter-bar"><i style="width:${percent || 0}%"></i></span></div>`).join('');
+}
+updateSystem(); setInterval(updateSystem, 3000);
